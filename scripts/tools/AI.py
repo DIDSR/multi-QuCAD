@@ -16,6 +16,10 @@
 ## 10/28/2022
 ## ----------
 ## * Add in a new class method to accept a single operating threshold
+##
+## 05/05/2023
+## ----------
+## * Add in properties for multi-AI scenario
 ###########################################################################
 
 ################################
@@ -53,7 +57,10 @@ class AI (object):
         points, a bi-normal distribution is assumed to fit the ROC
         curve. During simulation, the key function is is_positive()
         which generates AI call based on the disease (truth) status
-        of the simulated patient.    
+        of the simulated patient.
+
+        With multiple-AIs, each AI class only review cases in a specific
+        group (groupName) for a specific disease (targetDisease).
     '''
 
     def __init__ (self):
@@ -76,8 +83,12 @@ class AI (object):
         #  2. If given an operating point
         self._from_opThresh = False
 
+        ## For multi-AIs
+        self._groupName = None
+        self._targetDisease = None
+
     @classmethod
-    def build_from_empiricalROC (cls, AIname, rocFile, SeThresh):
+    def build_from_empiricalROC (cls, AIname, groupName, targetDisease, rocFile, SeThresh):
 
         ''' Initialize the AI object with an input CSV file with data points
             along an empirical ROC curve. To obtain the underlying diseased
@@ -107,6 +118,8 @@ class AI (object):
         anInstance = cls ()
         ## Set parameters
         anInstance._AIname = AIname
+        anInstance._groupName = groupName
+        anInstance._targetDisease = targetDisease
         anInstance.rocFile = rocFile
         anInstance.SeThresh = SeThresh
         anInstance._from_empiricalROC = True
@@ -114,7 +127,7 @@ class AI (object):
         return anInstance
 
     @classmethod
-    def build_from_opThresh (cls, AIname, SeThresh, SpThresh):
+    def build_from_opThresh (cls, AIname, groupName, targetDisease, SeThresh, SpThresh):
         
         ''' Initialize the AI object with an operating point of Se and Sp
             
@@ -133,6 +146,8 @@ class AI (object):
         anInstance = cls ()
         ## Set parameters
         anInstance._AIname = AIname
+        anInstance._groupName = groupName
+        anInstance._targetDisease = targetDisease        
         anInstance.SeThresh = SeThresh
         anInstance.SpThresh = SpThresh
         anInstance._from_opThresh = True
@@ -161,6 +176,12 @@ class AI (object):
 
     @property
     def AIname (self): return self._AIname
+
+    @property
+    def groupName (self): return self._groupName
+
+    @property
+    def targetDisease (self): return self._targetDisease
 
     @property
     def norm_mu (self): return self._norm_a / self._norm_b
@@ -369,19 +390,33 @@ class AI (object):
         ## Create PDF plot
         self._plot_ROC(outPath)
         
-    def is_positive (self, is_diseased=False):
+    def is_positive (self, apatient):
         
-        ''' Generate AI call of a patient based on its diseased (truth) status.
+        ''' Generate AI call of a patient based on its diseased (truth) status and
+            group name that the patient is in.
         
             input
             -----
-            is_diseased (bool): truth status of the patient
+            apatient (patient): a patient instance
             
             output
             ------
             is_positive (bool): AI-call of the patient
         '''
         
+        ## If this patient does not belong to the same group, this patient
+        ## is not seen by this AI i.e. no positive / negative from this AI 
+        if not apatient.group_name == self.groupName: return None 
+
+        ## This patient is viewed by this AI. Positive/negative labeling
+        ## depends on the diseased status of the patient. Caveats so far:
+        ##  * Each patient is only viewed by one AI (for now)
+        ##  * In cases where an AI identifies multiple diseases, each
+        ##    disease has its own ROC and threshold. If any of them is
+        ##    flagged, this patient is flagged. Therefore, one can 
+        ##    break it down to multiple AI devices. 
+        is_diseased = apatient.disease_name == self.targetDisease
+
         if self._from_empiricalROC:
             ## If using empirical ROC data points, is_positive score
             ## is from normal distribution, whose mean and standard
@@ -403,33 +438,42 @@ class AI (object):
         ## this AI instance is not fully initialized.        
         raise IOError ('AI is not initialized. Please provide either an empirical ROC via a CSV file or an operating Se, Sp point.')
 
-    def run_pivotal (self, nPatients=5000, prevalence=0.1, fractionED=0.1, arrivalRate=0.1):
+    def run_pivotal (self, nPatients=5000, diseaseGroups=None, fractionED=0.1, arrivalRate=0.1):
 
-        ''' Run pivotal study to quickly check AI diagnostic performance from
-            simulation
+        ''' Run pivotal study to quickly check AI diagnostic performance from simulation
             
             inputs
             ------
             nPatients (int): number of simulated patients
-            prevalence (float): number of diseased / total number of simulated non-emergent patients
+            diseaseGroups (dict): Fractions of each group and target disease
             fractionED (float): number of emergent / total number of simulated patients
             arrivalRate (float): patient's overall arrival rate i.e. inverse of average interarrival times
- 
+
             output
             ------
             diagnostic performance (dict): true-positive, true-negative, false-positive, false-negative rates  
+                                           as well as the actual number of patients in these target group
+                                           and non-target group.
         '''
+        ## Must provide diseaseGroups dictionary
+        if diseaseGroups is None: return None
 
-        TP, TN, FP, FN = 0, 0, 0, 0
+        TP, TN, FP, FN, NonTarget = 0, 0, 0, 0, 0
         timestamp = pandas.to_datetime ('2020-01-01 00:00')
     
         for i in range (nPatients):
-            apatient = patient.patient (i, prevalence, fractionED, arrivalRate, timestamp)
-            apatient.is_positive = self.is_positive (is_diseased=apatient.is_diseased)
+            apatient = patient.patient (i, diseaseGroups, fractionED, arrivalRate, timestamp)
+            apatient.is_positive = self.is_positive (apatient)
+            ## If this patient doesn't belong to this group, Se/Sp calculation does not
+            ## include this patient, but still record the number of non-target patients 
+            if apatient.is_positive is None:
+                NonTarget += 1
+                continue
             if apatient.is_diseased and apatient.is_positive: TP += 1
             if not apatient.is_diseased and not apatient.is_positive: TN += 1
             if not apatient.is_diseased and apatient.is_positive: FP += 1
             if apatient.is_diseased and not apatient.is_positive: FN += 1
         
-        return {'TP':TP/(TP+FN), 'TN':TN/(TN+FP), 'FP':FP/(TN+FP), 'FN':FN/(TP+FN)}
+        return {'TPF':TP/(TP+FN), 'TNF':TN/(TN+FP), 'FPF':FP/(TN+FP), 'FNF':FN/(TP+FN),
+                'TP':TP, 'TN':TN, 'FP':FP, 'FN':FN, 'NonTarget':NonTarget}
 

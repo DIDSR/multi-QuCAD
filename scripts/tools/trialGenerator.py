@@ -14,6 +14,7 @@
 ################################ 
 import pandas, numpy, logging
 import simulator
+from tools import hier
 
 ################################
 ## Define constants
@@ -69,6 +70,8 @@ class trialGenerator (object):
         ## Parameters related to debugging
         self._logger = logging.getLogger ('trialGenerator.trialGenerator')
 
+        self._sim_performance = {}
+
         ## Parameters related to simulation results. These parameters will
         ## not be updated when a user changes input parameters.
         #   1. results from individual simulations 
@@ -91,10 +94,11 @@ class trialGenerator (object):
         self._nPatientsPadStart = nPatientsPads[0] # number of patients to be padded before counting results 
         self._nPatientsPadEnd = nPatientsPads[1]   # number of patients to be padded after counting results
 
-        self._prevalence = None                    # disease prevalence within the non-emergent subgroup
         self._fractionED = None                    # fraction of emergent patient in all patients
         self._arrivalRate = None                   # overall patient arrival rate regardless of subgroups 
         self._serviceTimes = None                  # mean reading time by interrupting, diseased, and non-diseased
+        self._diseaseGroups = None                 # disease prevalences within each group
+        self._theory_ppv_npv = None
 
     ## +----------------------------------------
     ## | Class properties
@@ -121,6 +125,8 @@ class trialGenerator (object):
     def n_patients_system_stats_from_trials (self): return self._n_patients_system_stats_from_trials
     @property
     def waiting_times_stats_from_trials (self): return self._waiting_times_stats_from_trials
+    @property
+    def sim_performance(self): return self._sim_performance    
     @property
     def nTrials (self): return self._nTrials
     @nTrials.setter
@@ -165,14 +171,15 @@ class trialGenerator (object):
             raise IOError ('Input nPatientPadsEnd must be an integer.')            
         self._nPatientPadsEnd = nPatientPadsEnd         
     @property
-    def prevalence (self): return self._prevalence
-    @prevalence.setter
-    def prevalence (self, prevalence):
-        if not isinstance (prevalence, float):
-            raise IOError ('Input prevalence must be a float.')
-        if not (prevalence >= 0.0 and prevalence <= 1.0):
-            raise IOError ('Input prevalence must be between 0 and 1.')
-        self._prevalence = prevalence
+    def diseaseGroups (self): return self._diseaseGroups
+    @diseaseGroups.setter
+    def diseaseGroups (self, diseaseGroups):
+        self._diseaseGroups = diseaseGroups
+    @property
+    def theory_ppv_npv (self): return self._theory_ppv_npv
+    @theory_ppv_npv.setter
+    def theory_ppv_npv (self, theory_ppv_npv):
+        self._theory_ppv_npv = theory_ppv_npv
     @property
     def fractionED (self): return self._fractionED
     @fractionED.setter
@@ -196,10 +203,6 @@ class trialGenerator (object):
         # 1. It must be a dictionary
         if not isinstance (serviceTimes, dict):
             raise IOError ('Input serviceTimes must be a dictionary.')
-        # 2. Three keys are expected: interrupting, diseased, and non-diseased
-        for key in ['interrupting', 'diseased', 'non-diseased']:
-            if not key in serviceTimes:
-                raise IOError ('Input serviceTimes must include an "{0}" key.'.format (key))
         self._serviceTimes = serviceTimes
     @property
     def nRadiologists (self): return self._nRadiologists
@@ -234,11 +237,11 @@ class trialGenerator (object):
         
         ## Set parameters
         sim.startTime = self._startTime
-        sim.prevalence = self._prevalence
         sim.fractionED = self._fractionED
         sim.arrivalRate = self._arrivalRate
         sim.serviceTimes = self._serviceTimes
         sim.nRadiologists = self._nRadiologists
+        sim.diseaseGroups = self._diseaseGroups
         sim.timeWindowDays = self._timeWindowDays
         sim.nPatientPadsEnd = self._nPatientPadsEnd
         sim.nPatientPadsStart = self._nPatientPadsStart
@@ -285,6 +288,8 @@ class trialGenerator (object):
         stat['mean']         = numpy.average (sample, weights=w)
         stat['upper_1sigma'] = sample[cumulative>0.84][0]  # upper is 50%+34% = 84%
         stat['upper_95cl']   = sample[cumulative>0.975][0] # upper is 50%+47.5% = 97.5%
+        stat['sample_size']   = len (sample) # added RD
+        stat['sum']   = numpy.sum(sample) # added RD
         
         return stat
 
@@ -357,7 +362,8 @@ class trialGenerator (object):
                                     'FP': self._get_stats(fp_values),
                                     'FN': self._get_stats(fn_values)}      
     
-        return stats        
+        return stats       
+    
 
     def _get_n_patients_stats (self, df):
 
@@ -475,7 +481,50 @@ class trialGenerator (object):
     ## +--------------------------------------------------------------
     ## | Public functions to set parameters and start trials
     ## +--------------------------------------------------------------
-    def set_params (self, params):
+    def _get_sim_performance (self, oneSim, AIs):
+    
+        ## Check with group prob and disease prevalence
+        patient_groups = numpy.array ([p.group_name for p in oneSim.get_noninterrupting_records('fifo')])
+        for groupName, groupInfo in self.diseaseGroups.items():
+            
+            # 1. check group prob
+            patient_groupnames_in_this_group = patient_groups[patient_groups==groupName]
+            g_sim = len (patient_groupnames_in_this_group) / len (patient_groups)
+            self._sim_performance['group'][groupName]['groupFraction'].append (g_sim)
+            
+            # 2. check disease prob within this group
+            patient_diseases = numpy.array ([p.disease_name for p in oneSim.get_noninterrupting_records('fifo')
+                                             if p.group_name == groupName])
+            disease_names = numpy.array (groupInfo['diseaseNames'] + ['non-diseased'])
+            unexpected_patient_diseases = patient_diseases[~numpy.in1d (patient_diseases, disease_names)]
+            for diseaseName in disease_names:
+                patient_diseasenames_in_this_group = patient_diseases[patient_diseases==diseaseName]
+                d_sim = len (patient_diseasenames_in_this_group) / len (patient_diseases)
+                self._sim_performance['group'][groupName]['diseases'][diseaseName].append (d_sim)
+        
+        ## Check with AI performance
+        for AIname, anAI in AIs.items():
+            
+            groupName = anAI.groupName
+            targetDisease = anAI.targetDisease
+            Se, Sp = anAI.SeThresh, anAI.SpThresh
+        
+            # Extract patients within the target group
+            patients_in_gp = numpy.array ([p for p in oneSim.get_noninterrupting_records('fifo')
+                                           if p.group_name == groupName])        
+            # Divide patients into TP, FP, TN, FN based on target diseased
+            TP = len ([p for p in patients_in_gp if p.disease_name==targetDisease and p.is_positives[AIname]])
+            FP = len ([p for p in patients_in_gp if not p.disease_name==targetDisease and p.is_positives[AIname]])
+            FN = len ([p for p in patients_in_gp if p.disease_name==targetDisease and not p.is_positives[AIname]])
+            TN = len ([p for p in patients_in_gp if not p.disease_name==targetDisease and not p.is_positives[AIname]])        
+        
+            ppv_sim = 0 if TP + FP == 0 else TP / (TP + FP)
+            npv_sim = 0 if TN + FN == 0 else TN / (TN + FN)
+            
+            self._sim_performance['AI'][AIname]['ppv'].append (ppv_sim)
+            self._sim_performance['AI'][AIname]['npv'].append (npv_sim)
+
+    def set_params (self, params, AIs):
         
         ''' Function to set parameters for all trials.
 
@@ -488,15 +537,27 @@ class trialGenerator (object):
         self.startTime = params['startTime']
         self.timeWindowDays = params['timeWindowDays']
         self.doPlots = params['doPlots']
-        self.prevalence = params['prevalence']
+        self.theory_ppv_npv = params['probs_ppv_npv']
+        self.diseaseGroups = params['diseaseGroups']
         self.fractionED = params['fractionED']
         self.arrivalRate = 1/params['meanArrivalTime']
         self.serviceTimes = params['meanServiceTimes'] 
         self.nRadiologists = params['nRadiologists']
         self.nPatientPadsStart = params['nPatientsPads'][0]
         self.nPatientPadsEnd = params['nPatientsPads'][1]        
-      
-    def simulate_trials (self, anAI):
+    
+        ## Once we know the disease groups, we can initialize sim_performanace.
+        self._sim_performance['group'] = {}
+        for groupName, groupInfo in params['diseaseGroups'].items():
+            self._sim_performance['group'][groupName] = {'groupFraction': [], 'diseases':{}}
+            for diseaseName in numpy.array (groupInfo['diseaseNames'] + ['non-diseased']):
+                self._sim_performance['group'][groupName]['diseases'][diseaseName] = []
+            
+        self._sim_performance['AI'] = {}
+        for AIname in AIs.keys():
+            self._sim_performance['AI'][AIname] = {'ppv':[], 'npv':[]}
+
+    def simulate_trials (self, AIs, aDiseaseTree):
         
         ''' Function to simulate as many as trials asked.
 
@@ -520,12 +581,14 @@ class trialGenerator (object):
             ## Generate a trial
             sim = self._reset_sim (sim)
             sim.track_log = False
-            sim.simulate_queue (anAI)
+            sim.simulate_queue (AIs, aDiseaseTree, hier.hier_classes_dict)
+            #self._get_sim_performance (sim, AIs)
             #if i%10 == 0: self._print_timeStats (sim, i)
             # Get waiting time data frame (one frame per trial)
             df = sim.waiting_time_dataframe
             df['trial_id'] = 'trial_' + str (i).zfill (3)
             df['patient_id'] = df.index
+            df['delta'] = df['preresume'] - df['fifo'] # added RD
             waitTimedfs.append (df)
             
             # Handle n customers per class 

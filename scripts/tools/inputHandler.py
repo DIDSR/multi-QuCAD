@@ -4,58 +4,51 @@
 ## This script contains functions that handle input user values, either as
 ## argument flags or as an input file. Based on that, an output params is
 ## returned for simulation to run on.
+##
+## 05/08/2023
+## ----------
+## * Add in properties for multi-AI scenario
 ################################################################################
 
 ################################
 ## Import packages
 ################################
-import numpy, pandas, os, argparse
-from calculator import get_theory_waitTime
+import numpy, pandas, os, argparse, sys
+from copy import deepcopy
+
+#sys.path.insert(0, os.getcwd()+'\\tools')
+#from calculator import get_theory_waitTime
 
 ################################
 ## Define constants
 ################################
 ## +------------------------
-## | Clinical / AI setting
-## +------------------------
-traffic = 0.8        # Hospital busyness
-TPFThresh = 1.0      # AI operating TPF (i.e. Se); Sp is defined by the ROC curve
-FPFThresh = 0.1      # None if use ROC curve
-prevalence = 0.1     # Disease prevalence
-nRadiologists = 1    # Number of radiologists on-site
-fractionED = 0.0     # Fraction of interrupting patients to all patients
-doPlots = False      # Flag to generate plots for this run
-## Radiologist service process in minutes
-##  * Diseased    : Average service time when the radiologist calls a case diseased
-##  * Non-diseased: Average service time when the radiologist calls a case non-diseased
-##  * Interrupting: Average service time for interruting patients
-meanServiceTimes = {'diseased':10, 'non-diseased':10, 'interrupting':5}
-
-## +------------------------
-## | Path / File locations
-## +------------------------
-rocFile     = None
-statsFile   = '../outputs/stats/stats.p'
-plotPath    = '../outputs/plots/'
-runtimeFile = '../outputs/stats/runTime.txt'
-
-## +------------------------
 ## | Workflow setting
 ## +------------------------
-verbose = False                # Print 
-doTrialOnly = False            # Skip the oneSim
-nTrials = 1                    # Number of trials
-nPatientsTarget = 20000        # Rough number of patients per trial
-qtypes = ['fifo', 'preresume'] # 'fifo' = without CADt scenario; 'preresume' = with CADt scenario
-rhoThresh = 0.95               # Maximum allowed hospital busyness
+qtypes = ['fifo', 'preresume', 'hierarchical'] # 'fifo' = without CADt scenario; 'preresume' = with CADt scenario
+rhoThresh = 0.99               # Maximum allowed hospital busyness
 nPatientsPads = [0, 1]         # Chop off the first and last 100 patients
 startTime = pandas.to_datetime ('2020-01-01 00:00') # Simulation Start time 
+
+## +------------------------
+## | Config file titles
+## +------------------------
+configFile = '../scripts/config_resday4.dat'
+configTitles = numpy.array (['Clinical setting', 'Group and disease parameters',
+                             'CADt AI diagnostic performance', 'Simulation setting'])
+# Disease hierarchy can also include diseases not seen by AI.
+disease_hierarchy = ['A', 'B', 'C', 'D']
+# Vendor hierarchy assumes that no two AIs have the same priority under hierarchical queuing.
+vendor_hierarchy = ['Vendor1', 'Vendor2', 'Vendor3', 'Vendor4']
+
+num_trials = 10 # number of simulation trials. The default value is set to 1 in config files.
+write_timelogs = False # save time logs for each queueing discipline separately. Only for the last trial.
 
 ################################
 ## Define lambdas
 ################################ 
-get_ppv = lambda p, Se, Sp: p*Se / (p*Se + (1-p)*(1-Sp))
-get_npv = lambda p, Se, Sp: 1 - p*(1-Se) / (p*(1-Se) + (1-p)*Sp)
+get_ppv = lambda p, Se, Sp: 0 if Se==0 else p*Se / (p*Se + (1-p)*(1-Sp))
+get_npv = lambda p, Se, Sp: 0 if Se==1 else 1 - p*(1-Se) / (p*(1-Se) + (1-p)*Sp)
 
 get_n_positive_patients = lambda oneSim, qtype:len (oneSim.get_positive_records(qtype))
 get_n_negative_patients = lambda oneSim, qtype:len (oneSim.get_negative_records(qtype))
@@ -63,19 +56,12 @@ get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_
 
 get_timeWindowDay = lambda arrivalRate, nPatientsTarget: int (numpy.ceil (nPatientsTarget / arrivalRate / (24*60)))
 
-get_is_positive = lambda params: params['prevalence']*(1-params['fractionED'])*params['SeThresh'] + \
-                                 (1-params['prevalence'])*(1-params['fractionED'])*(1-params['SpThresh'])
-get_is_negative = lambda params: params['prevalence']*(1-params['fractionED'])*(1-params['SeThresh']) + \
-                                 (1-params['prevalence'])*(1-params['fractionED'])*params['SpThresh']
-get_mu_effective = lambda params: 1/(params['prob_isPositive'] / params['mus']['positive'] + \
-                                     params['prob_isNegative'] / params['mus']['negative'] + \
+get_service_rate = lambda service_time: numpy.nan_to_num (numpy.inf) if service_time==0 else 1/service_time
+get_service_rates = lambda meanServiceTime: get_service_rate (meanServiceTime) if not isinstance (meanServiceTime, dict) else \
+                                            {disease: get_service_rate (aTime) for disease, aTime in meanServiceTime.items()}
+
+get_mu_effective = lambda params: 1/((1-params['prob_isInterrupting']) / params['mus']['non-interrupting'] + \
                                      params['prob_isInterrupting'] / params['mus']['interrupting'])
-get_mu_positive = lambda params:1/(params['ppv']/params['serviceRates']['diseased'] + \
-                                   (1-params['ppv'])/params['serviceRates']['non-diseased'])
-get_mu_negative = lambda params:1/(params['npv']/params['serviceRates']['non-diseased'] + \
-                                   (1-params['npv'])/params['serviceRates']['diseased'])
-get_mu_nonInterrupting = lambda params:1/(params['prevalence']/params['serviceRates']['diseased'] + \
-                                       (1-params['prevalence'])/params['serviceRates']['non-diseased'])
 get_lambda_effective = lambda params: params['traffic']*params['nRadiologists']*params['mu_effective']
 
 get_service_rate = lambda service_time: numpy.nan_to_num (numpy.inf) if service_time==0 else 1/service_time
@@ -83,6 +69,15 @@ get_service_rate = lambda service_time: numpy.nan_to_num (numpy.inf) if service_
 ################################
 ## Define functions
 ################################ 
+def _check_between_0_and_1 (key, value):
+
+    if value > 1:
+        print ('ERROR: Input {0} {1:.3f} is too high.'.format (key, value))
+        raise IOError ('Please provide a {0} between 0 and 1.'.format (key))
+    if value < 0:
+        print ('ERROR: Input {0} {1:.3f} is too low.'.format (key, value))
+        raise IOError ('Please provide a {0} between 0 and 1.'.format (key))            
+
 def check_user_inputs (params):
 
     ''' Function to check input traffic, FPFThresh, rocFile, and existence of
@@ -100,34 +95,41 @@ def check_user_inputs (params):
         raise IOError ('Please limit traffic below {0:.3f}.'.format (rhoThresh))
 
     ## Checks on values that are between 0 and 1
-    for key in ['traffic', 'TPFThresh', 'FPFThresh', 'prevalence', 'fractionED']:
-        if key == 'FPFThresh' and params[key] is None: continue
-        if params[key] > 1:
-            print ('ERROR: Input {0} {1:.3f} is too high.'.format (key, params[key]))
-            raise IOError ('Please provide a {0} between 0 and 1.'.format (key))
-        if params[key] < 0:
-            print ('ERROR: Input {0} {1:.3f} is too low.'.format (key, params[key]))
-            raise IOError ('Please provide a {0} between 0 and 1.'.format (key))            
+    for key in ['traffic', 'fractionED']: _check_between_0_and_1 (key, params[key])
+    #  AI: TPF and FPF
+    for name, info in params['AIinfo'].items():
+        # Check TPF
+        _check_between_0_and_1 ('AIinfo {0} {1}'.format (name, 'TPFThresh'), info['TPFThresh'])
+        # Check FPF
+        if info['FPFThresh'] is not None: 
+            _check_between_0_and_1 ('AIinfo {0} {1}'.format (name, 'FPFThresh'), info['FPFThresh'])
+        # Check FPFThresh and rocFile
+        #  1. Both are provided
+        if info['FPFThresh'] is not None and info['rocFile'] is not None:
+            print ('WARN: {0} has both FPFThresh and rocFile. Taking FPFThresh and ignoring rocFile.'.format (name))
+            params['rocFile'] = None
+        #  2. Neither are provided
+        if info['FPFThresh'] is None and info['rocFile'] is None:
+            print ('ERROR: Neither FPFThresh nor rocFile is provided for {0}.'.format (name))
+            raise IOError ('Please provide either FPFThresh or rocFile.')
+        # Check ROC file
+        if info['rocFile'] is not None:
+            if not os.path.exists (info['rocFile']):
+                print ('ERROR: Input rocFile does not exist.')
+                raise IOError ('Please provide a valid rocFile with two columns (first is true-positive fraction, and second is false-positive fraction).')
+
+    #  disease group: groupProb and diseaseProbs
+    for groupname, info in params['diseaseGroups'].items():
+        _check_between_0_and_1 ('diseaseGroups {0} groupProb'.format (groupname), info['groupProb'])
+        for diseasename, value in zip (info['diseaseNames'], info['diseaseProbs']):
+            _check_between_0_and_1 ('diseaseGroups {0} disease {1}'.format (groupname, diseasename), value)
 
     ## Checks on number of radiologists
     if params['nRadiologists'] > 2 and params['fractionED'] > 0.0:
-        print ('WARN: There are more than 2 radiologits with presence of interrupting images. Theoretical values for AI negative and diseased/non-diseased subgroups will not be available.')
-
-    ## Checks on FPFThresh and rocFile
-    #  1. Both are provided
-    if params['FPFThresh'] is not None and params['rocFile'] is not None:
-        print ('WARN: Received both FPFThresh and rocFile. Taking FPFThresh and ignoring rocFile.')
-        params['rocFile'] = None
-    #  2. Neither are provided
-    if params['FPFThresh'] is None and params['rocFile'] is None:
-        print ('ERROR: Neither FPFThresh nor rocFile is provided.')
-        raise IOError ('Please provide either FPFThresh or rocFile.')
+        print ('WARN: There are more than 2 radiologits with presence of interrupting images.')
+        print ('WARN: Theoretical values for AI negative and diseased/non-diseased subgroups will not be available.')
 
     ## Checks if file/folders exists
-    if params['rocFile'] is not None:
-        if not os.path.exists (params['rocFile']):
-            print ('ERROR: Input rocFile does not exist.')
-            raise IOError ('Please provide a valid rocFile with two columns (first is true-positive fraction, and second is false-positive fraction).')
     for location in ['statsFile', 'runtimeFile', 'plotPath']:
         if params[location] is not None:
             if not os.path.exists (os.path.dirname (params[location])):
@@ -138,7 +140,7 @@ def check_user_inputs (params):
                 except:
                     raise IOError ('Cannot create the folder.\nPlease provide a valid {0} path.'.format (location))
 
-def read_args (): 
+def read_args (configFile, verbose): 
 
     ''' Function to read user inputs. Adding doPlot and doRunTime based on whether
         user provides the paths.
@@ -148,47 +150,15 @@ def read_args ():
         params (dict): dictionary capsulating all user inputs
     '''
 
-    parser = argparse.ArgumentParser(description='Read user input setting params.')
-
-    parser.add_argument('--traffic', type=float, default=traffic, help='overall traffic intensity')
-    parser.add_argument('--TPFThresh', type=float, default=TPFThresh, help='AI TPF (Se) threshold')
-    parser.add_argument('--FPFThresh', type=float, default=FPFThresh, help='AI FPF (1-Sp) threshold')
-    parser.add_argument('--prevalence', type=float, default=prevalence, help='Disease prevalence')
-    parser.add_argument('--nRadiologists', type=int, default=nRadiologists, help='number of radiologists on-site')    
-    parser.add_argument('--fractionED', type=float, default=fractionED, help='Fraction of interrupting images')
-    parser.add_argument('--meanServiceTimeDiseasedMin', type=float, default=meanServiceTimes['diseased'],
-                        help='Mean service time [min] a radiologist takes to complete a image that s/he calls diseased')
-    parser.add_argument('--meanServiceTimeNonDiseasedMin', type=float, default=meanServiceTimes['non-diseased'],
-                        help='Mean service time [min] a radiologist takes to complete a image that s/he calls non-dieased')
-    parser.add_argument('--meanServiceTimeInterrutingMin', type=float, default=meanServiceTimes['interrupting'],
-                        help='Mean service time [min] a radiologist takes to complete an interrupting image')
-
-    parser.add_argument('--configFile', type=str, default=None, help='User input configuration data file with all parameters')
-    parser.add_argument('--rocFile', type=str, default=None, help='Input ROC curve with TPR and FPR that will be parameterized')    
-    parser.add_argument('--statsFile', type=str, default=statsFile, help='Path to output stats .p pickled file')
-    parser.add_argument('--runtimeFile', type=str, default=runtimeFile, help='Output runtime performance .txt text file')    
-    parser.add_argument('--plotPath', type=str, default=plotPath, help='Output folder to store all plots')
-
-    parser.add_argument('--verbose', action='store_true', default=False, help='Print out simulation progress')
-    parser.add_argument('--doTrialOnly', action='store_true', default=False, help='Skip one simulation for checking AI performance')
-    parser.add_argument('--nTrials', type=int, default=nTrials, help='Number of trials to perform')
-    parser.add_argument('--nPatientsTarget', type=int, default=nPatientsTarget, help='targeted # patients per trial')
-    
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description='Read user input setting params.')
+    # parser.add_argument('--configFile', type=str, default=None, help='User input configuration data file with all parameters')
+    # parser.add_argument('--verbose', action='store_true', default=False, help='Print out simulation progress')
+    # args = parser.parse_args()
     
     ## Put everything in a dictionary
-    params = {'traffic':args.traffic, 'TPFThresh':args.TPFThresh, 'FPFThresh':args.FPFThresh,
-              'prevalence':args.prevalence, 'nRadiologists':args.nRadiologists, 'fractionED':args.fractionED, 
-              'meanServiceTimes':{'diseased':args.meanServiceTimeDiseasedMin,
-                                  'non-diseased':args.meanServiceTimeNonDiseasedMin,
-                                  'interrupting':args.meanServiceTimeInterrutingMin},
-              'rocFile':args.rocFile, 'statsFile':args.statsFile, 'runtimeFile':args.runtimeFile,
-              'plotPath':args.plotPath, 'verbose':args.verbose, 'doTrialOnly':args.doTrialOnly,
-              'configFile':args.configFile, 'nTrials':args.nTrials, 'nPatientsTarget':args.nPatientsTarget,
+    params = {'verbose':verbose, 'configFile':configFile, 
               'qtypes':qtypes, 'nPatientsPads':nPatientsPads, 'startTime':startTime}
-
-    if args.configFile is not None:
-        params = read_configFile (args.configFile, params)
+    params.update (read_configFile (configFile))
 
     if params['verbose']:
         print ('Reading user inputs:')
@@ -196,7 +166,7 @@ def read_args ():
         ## Put user inputs into `params` 
         for key in params.keys():
             if key in ['qtypes', 'nPatientsPads', 'startTime']: continue
-            if key == 'meanServiceTimes':
+            if key in ['meanServiceTimes', 'diseaseGroups', 'AIinfo']:
                 for subgroup in params[key].keys():
                     print ('| {0} {1}: {2}'.format (key, subgroup, params[key][subgroup]))
                 continue
@@ -215,7 +185,146 @@ def read_args ():
     check_user_inputs (params)
     return params
 
-def read_configFile (configFile, params):
+def extract_clinical_simulation_settings (content):
+
+    ''' Function to extract clinical and simulation settings. The returned variable must
+        should contain the following keys and their values:
+                    * 'traffic', 'fractionED', 'nRadiologists',
+                    * 'meanServiceTimeInterruptingMin', 'nTrials',
+                    * 'nPatientsTarget', 'doTrialOnly', 'statsFile',
+                    * 'runTimeFile', 'plotPath'
+        
+        inputs 
+        ------
+        content (dict): Dictionary with title keys of "Clinical setting" and "Simulation setting"
+
+        outputs
+        -------
+        inputs (dict): parameters and their values 
+    '''
+
+    ## Extract clinical and simulation settings as inputs
+    inputs = {line.split()[0]:line.split()[1] for line in content['Clinical setting']}
+    inputs.update ({line.split()[0]:line.split()[1] for line in content['Simulation setting']})
+
+    #  Check the inputs and change value types accordingly based on parameters name
+    for key, value in inputs.items():
+        # These keys should be float
+        if key in ['traffic', 'fractionED', 'meanServiceTimeInterruptingMin']:
+            inputs[key] = float (value)
+        # These keys should be integers
+        if key in ['nRadiologists', 'nTrials', 'nPatientsTarget']:
+            inputs[key] = int (value)
+        # These keys should be boolean
+        if key in ['doTrialOnly']:
+            if not inputs[key] in ['True', 'False']:
+                raise IOError ('ERROR: {0} must be either True or False.'.format (key))
+            inputs[key] = eval (value)
+        # These keys may be None
+        if key in ['rocFile', 'runTimeFile', 'plotPath']:
+            if value == 'None': inputs[key] = None
+
+    return inputs    
+
+def extract_group_and_disease_parameters (groupDiseaseParameters):
+
+    ''' Function to extract parameters related to groups and target diseases
+        
+        inputs 
+        ------
+        groupDiseaseParameters (array): every non-empty lines in "Group and disease parameters"
+
+        outputs
+        -------
+        diseaseGroups (dict): parameters and their values by group
+                              e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
+                                    'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+        meanServiceTimes (dict): radiologists' service time by groups and diseases
+                                 e.g. {'GroupCT':{'A':10, 'non-diseased':7},
+                                       'GroupUS':{'F':6, 'non-diseased':7}}
+    '''
+
+    ## Extract each sub-section by group name
+    diseaseGroups, meanServiceTimes = {}, {}
+
+    currentGroup = None
+    for line in groupDiseaseParameters:
+        # Detect/update the current group - only one word in this line
+        if not ' ' in line.strip():
+            currentGroup = line
+            diseaseGroups[currentGroup] = {'diseaseNames':[], 'diseaseProbs':[]}
+            meanServiceTimes[currentGroup] = {}
+            continue
+        ## For the rest, the first element is the parameter name followed by the values
+        parameter, values = line.split (' ', 1)
+        parameter = parameter.strip()
+        values = values.strip()
+        #  "disease" has 3 values
+        if parameter=='disease':
+            name, prob, readTime = [v.strip() for v in values.split (' ') if len (v.strip())>0]
+            diseaseGroups[currentGroup]['diseaseNames'].append (name.strip())
+            diseaseGroups[currentGroup]['diseaseProbs'].append (float (prob))
+            meanServiceTimes[currentGroup][name] = float (readTime)
+            continue
+        #  "groupProb" has 1 value 
+        if parameter=='groupProb':
+            diseaseGroups[currentGroup]['groupProb'] = float (values)
+            continue
+        #  "meanServiceTimeNonDiseasedMin" has 1 value
+        meanServiceTimes[currentGroup]['non-diseased'] = float (values)
+
+    return diseaseGroups, meanServiceTimes    
+
+def extract_cadt_diagnostic_performance (cadtPerformance):
+
+    ''' Function to extract parameters related to CADt AI diagnostic performance
+        
+        inputs 
+        ------
+        cadtPerformance (array): every non-empty lines in "CADt AI diagnostic performance"
+
+        outputs
+        -------
+        AIinfo (dict): parameters and their values by each AI
+                       e.g. {'Vendor1':{'groupName':'GroupCT', 'targetDisease':'A',
+                                        'TPFThresh':0.95, 'FPFThresh':0.15, 'rocFile':None}}
+    '''
+
+    ## Extract each sub-section by AI name
+    AIinfo = {}
+
+    currentAI = None
+    for line in cadtPerformance:
+        # Detect/update the current AI - only one word in this line
+        if not ' ' in line.strip():
+            currentAI = line
+            AIinfo[currentAI] = {}
+            continue
+        ## For the rest, the first element is the parameter name followed by 1 value
+        parameter, value = [l.strip() for l in line.split (' ') if len (l.strip())>0]
+        parameter = parameter.strip()
+        value = value.strip()
+        #  "groupName", "targetDisease" are strings
+        if parameter in ['groupName', 'targetDisease']:
+            AIinfo[currentAI][parameter] = value
+            continue
+        #  "TPFThresh" is a float
+        if parameter == 'TPFThresh':
+            AIinfo[currentAI][parameter] = float (value)
+            continue
+        #  "FPFThresh" may be a float or None
+        if parameter == 'FPFThresh':
+            value = None if value.lower() == 'none' else float (value)
+            AIinfo[currentAI][parameter] = value
+            continue
+        #  "rocFile" may be a string or None
+        if parameter == 'rocFile':
+            if value.lower() == 'none': value = None
+            AIinfo[currentAI][parameter] = value
+
+    return AIinfo    
+
+def read_configFile (configFile):
 
     ''' Function with all user input values for user to feed to simulation software.
 
@@ -223,57 +332,318 @@ def read_configFile (configFile, params):
         -----
         configFile (str): path and filename of the user input file
                           For an example, see ../../inputs/config.dat
-        params (dict): dictionary capsulating all user inputs                          
         
         outputs
         -------
-        params (dict): update dictionary capsulating all user inputs from config file
+        inputs (dict): all user inputs from config file
     '''
-
 
     with open (configFile, 'r') as f:
         config = f.readlines()
     f.close ()
 
-    ## Extract the key, values as inputs
-    inputs = [line.strip().split('#')[0].strip() for line in config
-              if len (line.strip())>0 and line.strip()[0]!='#']
-    inputs = {line.split()[0]:line.split()[1] for line in inputs}
-
-    ## Change value types accordingly based on parameters name
-    for key, value in inputs.items():
-        # These keys should be float
-        if key in ['traffic', 'fractionED', 'meanServiceTimeDiseasedMin', 'meanServiceTimeNonDiseasedMin',
-                   'meanServiceTimeInterruptingMin', 'prevalence', 'TPFThresh']:
-            inputs[key] = float (value)
-        # These keys should be integers
-        if key in ['nRadiologists', 'nTrials', 'nPatientsTarget']:
-            inputs[key] = int (value)
-        # These keys should be boolean
-        if key in ['doTrialOnly', 'verbose']:
-            if not inputs[key] in ['True', 'False']:
-                raise IOError ('ERROR: {0} must be either True or False.'.format (key))
-            inputs[key] = eval (value)
-        # These keys may be None
-        if key in ['FPFThresh', 'rocFile', 'runTimeFile', 'plotPath']:
-            if value == 'None': inputs[key] = None
-
-    ## Update params with user values
-    for key, value in inputs.items ():
-        ## If mean service time, put in sub-key
-        if 'meanServiceTime' in key:
-            if 'NonDiseased' in key:
-                params['meanServiceTimes']['non-diseased'] = inputs[key]
-            elif 'Diseased' in key:
-                params['meanServiceTimes']['diseased'] = inputs[key]
-            else: ## interrupting
-                params['meanServiceTimes']['interrupting'] = inputs[key]
+    ## Extract each section
+    content = {}
+    currentTitle = None
+    for line in config:
+        # Skip this line if empty
+        if len (line.strip())==0: continue
+        # Detect/update the current title as I scan through each line
+        isTitle = numpy.array ([title in line for title in configTitles])
+        if isTitle.any():
+            currentTitle = configTitles[isTitle][0]
+            content[currentTitle] = []
             continue
-        params[key] = inputs[key]
+        # If current title is None, it is the beginning of the config file
+        if currentTitle is None: continue
+        # Skip line if it starts with '#'
+        line = line.strip()
+        if line[0] == '#': continue
+        # Append this line to this section according to current title
+        content[currentTitle].append (line.split('#')[0].strip())
 
-    return params
+    ## Extract clinical and simulation settings as inputs
+    inputs = extract_clinical_simulation_settings (content)
+    inputs['AIinfo'] = extract_cadt_diagnostic_performance (content['CADt AI diagnostic performance'])
 
-def add_params (anAI, params):
+    diseaseGroups, meanServiceTimes = extract_group_and_disease_parameters (content['Group and disease parameters'])
+    meanServiceTimes['interrupting'] = inputs['meanServiceTimeInterruptingMin']
+    del inputs['meanServiceTimeInterruptingMin']
+    inputs['diseaseGroups'] = diseaseGroups
+    inputs['meanServiceTimes'] = meanServiceTimes
+
+    return inputs
+
+def get_ppvs_npvs (aDiseaseTree):
+    
+    # Each AI algorithm only detects one disease. Even if an AI device claims to
+    # detect multiple diseases, there are several underlying algorithm - one per
+    # disease. 
+    # So, for each algorithm targeting at one disease, we have a ppv. For a group
+    # with multiple AIs, the ppv and npv are calculated individually per AI based
+    # on the targeted disease only.
+    
+    probs = {'ppv':{}, 'npv':{}}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+        # Gather all the AIs in this group
+        AIinGroup = aGroup.AIs
+        # Positive/negative probabilities are valid quantities only if there is
+        # at least one AI in the group.
+        if len (AIinGroup) == 0: continue
+        # Get group name for later use
+        groupName = aGroup.groupName
+        # Set up dict for this group
+        for probkey in probs.keys():
+            if not groupName in probs[probkey]: probs[probkey][groupName] = {}  
+        # Each AI has one target disease. Loop through AI to get prob for its
+        # target disease.
+        for anAI in AIinGroup:
+            Se, Sp = anAI.SeThresh, anAI.SpThresh
+            AIName = anAI.AIname     
+            # Figure out the prevalence of the target disease in this group.
+            for aDisease in aGroup.diseases:
+                if aDisease.diseaseName == anAI.targetDisease:
+                    prevalence = aDisease.diseaseProb
+            # With prevalence, Se, Sp, calculate probabilities within group.
+            probs['ppv'][groupName][AIName] = get_ppv (prevalence, Se, Sp)
+            probs['npv'][groupName][AIName] = get_npv (prevalence, Se, Sp)
+            
+    return probs
+
+def get_prob (aDiseaseTree):
+    
+    # There is a probability associated with each disease state that takes
+    # into account all AIs within the same group.
+    
+    #
+    #                              AI-A
+    #                              ====
+    #                         / A   TP
+    #                        /                     
+    #                    / + -- B   FP
+    #                   /    \  
+    #                  /      \ ND  FP
+    #        / Group 1       
+    #       / (AI-A)   \      / A   FN
+    #      /            \    /
+    #     /              \ - -- B   TN
+    #    /                   \
+    #   /                     \ ND  TN
+    #   \
+    #    \                              AI-C    AI-D
+    #     \                             ====    ====
+    #      \                        / C  TP      FP 
+    #       \                      /
+    #        \                 / + -- D  FP      TP
+    #         \               /  \ \
+    #          \             /    \ \ E  FP      FP
+    #           \           /      \
+    #            \         /        \ ND FP      FP
+    #             \ Group 2              
+    #              (AI-C,  \
+    #               AI-D)   \ 
+    #                        \      / C  FN      TN
+    #                         \    /
+    #                          \ - -- D  TN      FN
+    #                            \ \
+    #                             \ \ E  TN      TN
+    #                              \
+    #                               \ ND TN      TN
+    #
+    # The probability calculates here is the last layers i.e. Given a
+    # group and given a positive/negative subgroup, what is the prob
+    # of a disease state. For example, in group 1+, what is the prob
+    # of getting a truly diseased with A? Same for getting a truly
+    # diseased with B (that AI-A is not trained to identify)? And that
+    # for truly non-diseased patients?
+    #
+    # For a group with two AIs, P(+) of a disease includes the TP by
+    # one AI and FP by another AI. Assuming that all diseases within the
+    # group are uncorrelated and that there are enough patients for each
+    # disease condition subgroup, the positive probability is just the
+    # sum of P(+A) for all diseases. Therefore, for each AI in this group,
+    # we need to sum up the probabilities. In cases where one or more
+    # disease conditions in the group do not have a dedicated AI to look
+    # for that condition, no extra term is needed; its effect is included
+    # in the (1-Sp)*(1-pA) term. Note that there is an extra factor of 2
+    # (or more depending on the number of AIs involved in the group) bec
+    # the same patient is viewed twice, each by a different AI.
+    
+    probs = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+        
+        probs[aGroup.groupName] = {}
+        diseases = aGroup.diseases
+        diseaseProbs = {aDisease.diseaseName:aDisease.diseaseProb for aDisease in diseases}
+        
+        for priorityClass in ['positive', 'negative']:
+            probs[aGroup.groupName][priorityClass] = {}
+        
+            for aDisease in diseases:
+                prevalence = diseaseProbs[aDisease.diseaseName]
+                probs[aGroup.groupName][priorityClass][aDisease.diseaseName] = {}
+                ## If no AI in this group, positive prob = 0, negative prob= 1
+                ## They all go to the negative queue
+                if len (aGroup.AIs) == 0:
+                    prob = 0 if priorityClass=='positive' else 1
+                    probs[aGroup.groupName][priorityClass][aDisease.diseaseName]['noAI'] = prob*prevalence
+                for anAI in aGroup.AIs:
+                    ## Either true positive or false negative
+                    if anAI.targetDisease == aDisease.diseaseName:
+                        if priorityClass=='positive': # True positive
+                            key = anAI.AIname + '_TP'
+                            prob = prevalence*anAI.SeThresh
+                        else: # False negative
+                            key = anAI.AIname + '_FN'
+                            prob = prevalence*(1-anAI.SeThresh)
+                    else: ## Either false positive or true negative
+                        if priorityClass=='positive': # False positive
+                            key = anAI.AIname + '_FP'
+                            prob = prevalence*(1-anAI.SpThresh)
+                        else: # True negative
+                            key = anAI.AIname + '_TN'
+                            prob =  prevalence*anAI.SpThresh
+                    probs[aGroup.groupName][priorityClass][aDisease.diseaseName][key] = prob
+                    
+    return probs
+
+def get_positive_negative_probs (aDiseaseTree, probs):
+    
+    # This function gets the probability (per group) that a patient with disease name
+    # is called positive by either AI.
+    
+    newProbs = deepcopy (probs)
+    
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupName = aGroup.groupName
+        nAI = len (aGroup.AIs)
+        
+        for aDisease in aGroup.diseases:
+            
+            diseaseName = aDisease.diseaseName
+            diseaseProb = aDisease.diseaseProb
+
+            for priorityClass in ['positive', 'negative']:
+                
+                if nAI <= 1:
+                    prob_isClass = list (probs[groupName][priorityClass][diseaseName].values())[0]
+                else:
+                    summed = sum (probs[groupName][priorityClass][diseaseName].values())
+                    multiplied = numpy.product (list (probs[groupName][priorityClass][diseaseName].values()))
+                    prob_isClass = summed - multiplied/diseaseProb**(nAI-1) if priorityClass == 'positive' else \
+                                   multiplied/diseaseProb**(nAI-1)
+                newProbs[groupName][priorityClass][diseaseName]['is_'+priorityClass] = prob_isClass 
+                
+    return newProbs
+
+def get_isPos_isNeg (aDiseaseTree, probs):
+    
+    ## This is different from get_positive_negative_probs() in a sense
+    ## that this function outputs the overall probability of a patient
+    ## being negative or positive (regardless of the disease conditions
+    ## or disease truth or group that it belongs to).
+    
+    PosNegProb = {}
+    
+    for priorityClass in ['positive', 'negative']:
+        prob = 0
+        for aGroup in aDiseaseTree.diseaseGroups:
+            # Get the group information
+            groupProb = aGroup.groupProb
+            groupName = aGroup.groupName
+            # Gather positive/negative prob
+            summed = sum ([probs[groupName][priorityClass][aDisease.diseaseName]['is_' + priorityClass]
+                           for aDisease in aGroup.diseases])
+            prob += summed*groupProb
+        PosNegProb[priorityClass] = prob
+
+    return PosNegProb
+
+def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False):
+    
+    meanReadingTime = 0
+    priorityClass = 'negative' if doNeg else 'positive'
+    condProbs = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+
+        if not doNeg and len (aGroup.AIs) == 0: continue
+        
+        # Get the group information
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        nAI = len (aGroup.AIs)        
+        if not groupName in condProbs: condProbs[groupName] = {}
+        
+        # Gather the probabilities for AI label subgroup
+        p_pclass_group = sum ([probs[groupName][priorityClass][aDisease.diseaseName]['is_'+priorityClass]
+                               for aDisease in aGroup.diseases])
+        p_group_pclass = p_pclass_group * groupProb / probs_pos_neg[priorityClass]
+        
+        # For each disease, calculate the p/mu
+        for aDisease in aGroup.diseases:
+            # Get this disease name
+            diseaseName = aDisease.diseaseName
+            diseaseProb = aDisease.diseaseProb                        
+            # Calculate the prob for this disease in this group
+            pvs = []
+            for anAI in aGroup.AIs:
+                AIName = anAI.AIname
+                targetDiseaseProb = [aDisease.diseaseProb for aDisease in aGroup.diseases
+                                     if aDisease.diseaseName==anAI.targetDisease][0]
+                
+                pv = probs_ppv_npv['npv'][groupName][AIName] if doNeg else \
+                     probs_ppv_npv['ppv'][groupName][AIName]
+                
+                if doNeg:
+                    thisPV = 1-pv if anAI.targetDisease == diseaseName else \
+                             pv*diseaseProb / (1-targetDiseaseProb)
+                else:                
+                    thisPV = pv if anAI.targetDisease == diseaseName else \
+                             (1-pv)*diseaseProb / (1-targetDiseaseProb)
+                
+                pvs.append (thisPV)
+            
+            if nAI == 0:
+                p_disease_group = diseaseProb
+            elif nAI == 1:
+                p_disease_group = pvs[0] 
+            else:
+                summed = numpy.sum (pvs)
+                multiplied = numpy.product (pvs)
+                            
+                p_disease_group = summed - multiplied/diseaseProb if priorityClass == 'positive' else \
+                                  multiplied/diseaseProb
+        
+            thisProb = p_group_pclass * p_disease_group
+            condProbs[groupName][diseaseName] = thisProb
+            # print ('+---------------------------------------------------------')
+            # print ('{0} {1} {2}:'.format (groupName, diseaseName, priorityClass))
+            # print ('  -- pvs: {0}'.format (pvs))
+            # print ('  -- p_disease_group: {0}'.format (p_disease_group))
+            # print ('  -- p_group_pclass: {0}'.format (p_group_pclass))
+            # print ('  -- thisProb: {0}'.format (thisProb))
+            mu = mus[groupName][diseaseName]
+            meanReadingTime += thisProb/mu
+        
+    # Inverse to get the effective service rate
+    return 1/meanReadingTime, condProbs
+
+def get_muNonEm (prob_pos_neg, mus):
+       
+    meanReadingTime = 0
+
+    for priorityClass in ['positive', 'negative']:
+        mu = mus[priorityClass]
+        prob = prob_pos_neg[priorityClass]
+        meanReadingTime += prob/mu
+        
+    # Inverse to get the effective service rate
+    return 1/meanReadingTime
+
+def add_params (AIs, params, aDiseaseTree):
 
     ''' Function to add additional parameters from user inputs. This includes
         probabilities that the next patient belongs to a certain priority class,
@@ -290,27 +660,32 @@ def add_params (anAI, params):
     '''
 
     ## Probabilities
-    params['SeThresh'] = anAI.SeThresh
-    params['SpThresh'] = anAI.SpThresh
-    params['ppv'] = 0 if params['SeThresh']==0 else get_ppv (params['prevalence'], params['SeThresh'], params['SpThresh'])
-    params['npv'] = 0 if params['SeThresh']==1 else get_npv (params['prevalence'], params['SeThresh'], params['SpThresh'])
+    params['SeThreshs'] = {AIname:anAI.SeThresh for AIname, anAI in AIs.items()}
+    params['SpThreshs'] = {AIname:anAI.SpThresh for AIname, anAI in AIs.items()}
     params['prob_isInterrupting'] = params['fractionED']
-    params['prob_isDiseased'] = params['prevalence']*(1-params['fractionED'])
-    params['prob_isNonDiseased'] = (1-params['prevalence'])*(1-params['fractionED'])
-    params['prob_isPositive'] = get_is_positive (params)
-    params['prob_isNegative'] = get_is_negative (params)
-    params['prob_isTP'] = params['prevalence']*(1-params['fractionED'])*params['SeThresh']
-    params['prob_isFP'] = (1-params['prevalence'])*(1-params['fractionED'])*(1-params['SpThresh'])
-    params['prob_isFN'] = params['prevalence']*(1-params['fractionED'])*(1-params['SeThresh'])
-    params['prob_isTN'] = (1-params['prevalence'])*(1-params['fractionED'])*params['SpThresh']
-
+    params['prob_isDiseased'] = aDiseaseTree.get_diseased_prevalence()*(1-params['fractionED'])
+    params['prob_isNonDiseased'] = aDiseaseTree.get_nondiseased_prevalence()*(1-params['fractionED'])    
+    
+    probs = get_prob (aDiseaseTree)
+    params['probs_ppv_npv'] = get_ppvs_npvs (aDiseaseTree)
+    params['probs'] = get_positive_negative_probs (aDiseaseTree, probs)
+    params['probs_pos_neg'] = get_isPos_isNeg (aDiseaseTree, params['probs'])
+    params['prob_isPositive'] = params['probs_pos_neg']['positive']*(1-params['fractionED'])
+    params['prob_isNegative'] = params['probs_pos_neg']['negative']*(1-params['fractionED'])
+    
     ## Service rates
-    #  Convert diseased/non-diseased service time from probabilities
-    params['serviceRates'] = {key: get_service_rate (value) for key, value in params['meanServiceTimes'].items()}
+    params['serviceRates'] = {key: get_service_rates (value) for key, value in params['meanServiceTimes'].items()}
     params['mus'] = params['serviceRates']
-    params['mus']['positive'] = get_mu_positive (params)
-    params['mus']['negative'] = get_mu_negative (params)
-    params['mus']['non-interrupting'] = get_mu_nonInterrupting (params)
+    params['probs_condByPriority'] = {}
+    params['mus']['positive'], params['probs_condByPriority']['positive'] = get_mu (aDiseaseTree, params['probs'],
+                                                                                    params['probs_pos_neg'],
+                                                                                    params['probs_ppv_npv'],
+                                                                                    params['mus'], doNeg=False)
+    params['mus']['negative'], params['probs_condByPriority']['negative'] = get_mu (aDiseaseTree, params['probs'],
+                                                                                    params['probs_pos_neg'],
+                                                                                    params['probs_ppv_npv'],
+                                                                                    params['mus'], doNeg=True)
+    params['mus']['non-interrupting'] = get_muNonEm (params['probs_pos_neg'], params['mus'])
     params['mu_effective'] = get_mu_effective (params)
     
     ## Arrival rates
@@ -318,14 +693,9 @@ def add_params (anAI, params):
     params['meanArrivalTime'] = 1/params['lambda_effective']
     params['arrivalRates'] = {'interrupting':params['prob_isInterrupting']*params['lambda_effective'],
                               'non-interrupting':(1-params['prob_isInterrupting'])*params['lambda_effective'],
-                              'diseased':params['prob_isDiseased']*params['lambda_effective'],
-                              'non-diseased':params['prob_isNonDiseased']*params['lambda_effective'],
                               'positive':params['prob_isPositive']*params['lambda_effective'],
-                              'negative':params['prob_isNegative']*params['lambda_effective'],
-                              'diseased_positive'    :params['prob_isTP']*params['lambda_effective'],
-                              'non-diseased_positive':params['prob_isFP']*params['lambda_effective'],
-                              'diseased_negative'    :params['prob_isFN']*params['lambda_effective'],
-                              'non-diseased_negative':params['prob_isTN']*params['lambda_effective']}
+                              'negative':params['prob_isNegative']*params['lambda_effective']}             
+    
     
     ## Simulation times
     nPatientsPerTrial = params['nPatientsTarget'] + sum (params['nPatientsPads'])
@@ -333,20 +703,18 @@ def add_params (anAI, params):
     params['endTime'] = params['startTime'] + pandas.offsets.Day (params['timeWindowDays'])
     
     ## Setting per priority class    
-    params['lambdas'] = {'interrupting':params['arrivalRates']['interrupting'],
-                         'non-interrupting':params['arrivalRates']['non-interrupting'],
-                         'positive':params['arrivalRates']['positive'],
-                         'negative':params['arrivalRates']['negative']}
+    params['lambdas'] = params['arrivalRates']
     params['rhos'] = {key: params['lambdas'][key]/params['mus'][key]/params['nRadiologists']
                       for key in params['lambdas'].keys()}
 
     ## Get theoretical waiting time and delta time (i.e. wait-time-saving)
-    params['theory'] = {}
-    for aclass in ['interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']:
-        params['theory'][aclass] = {}
-        for variable in ['fifo', 'preresume', 'delta']:
-            key = 'waitTimeWithoutCADt' if variable == 'fifo' else \
-                  'waitTimeWithCADt' if variable == 'preresume' else 'waitTimeSaving'
-            params['theory'][aclass][key] = get_theory_waitTime (aclass, variable, params)    
+    #  Need more time to figure out how to theoretically predict wait-time in multi-AI/disease scenario
+    #params['theory'] = {}
+    #for aclass in ['interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']:
+    #    params['theory'][aclass] = {}
+    #    for variable in ['fifo', 'preresume', 'delta']:
+    #        key = 'waitTimeWithoutCADt' if variable == 'fifo' else \
+    #              'waitTimeWithCADt' if variable == 'preresume' else 'waitTimeSaving'
+    #        params['theory'][aclass][key] = get_theory_waitTime (aclass, variable, params)    
 
     return params

@@ -354,11 +354,8 @@ def get_cal_lowest (params):
         
         ## 2. [0,1]: (0,2,l) -> (1,0,l) !!!
         DR = DR_simple_solution (Zs['Z1'][0][1], Zs['Z2'][0][1], Zs['Z3'][0][1])
-        if params['fractionED'] == 0.0:
-            t0_2M_1H, t01_2M_1H, t1_2M_1H, t12_2M_1H, t2_2M_1H = 0, 0, 0, 0, 0
-        else:
-            t0_2M_1H, t01_2M_1H = (1-DR[1])*DR[2], DR[1]*DR[2]
-            t1_2M_1H, t12_2M_1H, t2_2M_1H = (1-DR[5])*DR[3], DR[5]*DR[3], DR[4]
+        t0_2M_1H, t01_2M_1H = (1-DR[1])*DR[2], DR[1]*DR[2]
+        t1_2M_1H, t12_2M_1H, t2_2M_1H = (1-DR[5])*DR[3], DR[5]*DR[3], DR[4]
         p_2M_1H = Gs[0][1]
         
         ## 3. [1,0]: (1,1,l) -> (0,1,l)
