@@ -148,7 +148,7 @@ def print_sim_performance (oneSim, AIs, params):
 ## Script starts here!
 ################################ 
 if __name__ == '__main__':
-    configFile = inputHandler.configFile
+    #configFile = inputHandler.configFile
     verbose = True
     parser = argparse.ArgumentParser(description="Description of your program")
     parser.add_argument("configFile", help="Path to the configuration file")
