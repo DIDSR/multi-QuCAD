@@ -221,10 +221,15 @@ def service_time_duration(open_times, close_times):
     return service / 60.
         
 ###########################################################################################################################
-configFile = inputHandler.configFile
+parser = argparse.ArgumentParser(description="Description of your program")
+parser.add_argument("configFile", help="Path to the configuration file")
+args = parser.parse_args()
+configFile = args.configFile
 params, aDiseaseTree, AIs = get_all_params(configFile)
-disease_hierarchy = inputHandler.disease_hierarchy
-vendor_hierarchy = inputHandler.vendor_hierarchy
+# Assuming params['diseaseGroups'][jj]['diseaseNames'] is a list
+disease_hierarchy = [item for sublist in [params['diseaseGroups'][jj]['diseaseNames'] for jj in list(params['diseaseGroups'].keys())] for item in sublist]
+vendor_hierarchy =  list(params['AIinfo'].keys())
+print('vendor_hierarchy', vendor_hierarchy)
 num_trials = inputHandler.num_trials
 write_timelogs = inputHandler.write_timelogs
 
@@ -283,6 +288,7 @@ theory_neg = calculator.get_theory_waitTime ('negative', 'preresume', params_all
 
 # For each disease in a group (diseases and groups have one-to-one correspondence here),
 # get the mean-wait times from simulation and theory. This can include diseases without AI.
+print('HIERARCHICAL:')
 
 for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
 
@@ -361,6 +367,7 @@ print('AI negative groups:', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_ne
 
 # Get FIFO results for each diseased subgroup from simulation and theory. 
 # (This function is somewhat redundant. The two "for loops" below could be inluded in the code block above.) 
+print('FIFO:')
 
 theory_fifo = calculator.get_theory_waitTime ('positive', 'fifo', params) # mean wait-time all AI-
 print(theory_fifo)

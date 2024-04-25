@@ -18,7 +18,7 @@
 ################################
 ## Import packages
 ################################ 
-import numpy, pickle, time, os, sys, cProfile, io, pstats
+import numpy, pickle, time, os, sys, cProfile, io, pstats, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
 from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator, plotter, hier
@@ -150,7 +150,11 @@ def print_sim_performance (oneSim, AIs, params):
 if __name__ == '__main__':
     configFile = inputHandler.configFile
     verbose = True
-    
+    parser = argparse.ArgumentParser(description="Description of your program")
+    parser.add_argument("configFile", help="Path to the configuration file")
+    args = parser.parse_args()
+    configFile = args.configFile
+
     ## Gather user-specified settings
     params = inputHandler.read_args(configFile, verbose)
 
@@ -242,6 +246,9 @@ if __name__ == '__main__':
         pickle.dump (data, f)
     f.close()
 
+    for AIname, AIinfo in params['AIinfo'].items():
+        trialGen.waiting_times_df.to_csv(f'{AIinfo['FPFThresh']}_{AIinfo['TPFThresh']}.csv')
+    
     if params['doRunTime']:
         pr.disable()
         s = io.StringIO()
