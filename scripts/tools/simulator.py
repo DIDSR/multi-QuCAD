@@ -43,7 +43,7 @@
 ################################
 ## Import packages
 ################################ 
-import numpy, pandas, queue, logging
+import numpy, pandas, queue, logging, argparse
 from copy import deepcopy
 
 import patient, radiologist
@@ -96,7 +96,7 @@ remove_nan = lambda array: array[numpy.isfinite (array)].astype (bool)
 ## Define class
 ################################ 
 class simulator (object):
-    
+
     def __init__ (self):
         
         ''' A simulator doesn't need any parameters to be initialized. To update
@@ -1595,8 +1595,16 @@ class simulator (object):
                 self._future_patients[qtype] = self._put_future_patients_in_queue (qtype, drTime,
                                                                                    self._future_patients[qtype])            
                 # Check if any interruption due to the new arrival.
-                # If a doctor is interrupted, read the latest (high priority) patient
-                self._read_newest_urgent_patient (qtype, apatient)
+                # If a doctor is interrupted, read the latest (high priority) 
+                parser = argparse.ArgumentParser(description="Description of your program")
+                parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
+                parser.add_argument("--priorityType", dest='priority_type', choices=['NP', 'P'], help='Specify the priority type (NP or P)', required=True)
+                args = parser.parse_args()
+                configFile = args.config_file
+                priorityType = args.priority_type
+    
+                if priorityType == 'P':
+                    self._read_newest_urgent_patient (qtype, apatient)
         
             # +-------------------------------
             # | New customer *will* arrive

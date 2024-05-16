@@ -1,4 +1,4 @@
-import scipy.stats, pickle, time, os, sys, cProfile, io, pstats, matplotlib
+import scipy.stats, pickle, time, os, sys, cProfile, io, pstats, matplotlib, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
 from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator, plotter
@@ -90,9 +90,9 @@ def get_new_params(new_params): # do only if equivalent AIs and disease probs ar
         dis = new_params['AIinfo'][vendor]['targetDisease']
         gp = new_params['AIinfo'][vendor]['groupName']
         # Find disease index in the list of all diseases in a gp.
-        dis_idx = new_params['diseaseGroups'][gp]['diseaseNames'].index(dis) 
+        dis_idx =  list(params['diseaseGroups'].keys()).index(gp)
         # Compute disease prevalence in population
-        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][dis_idx] * new_params['diseaseGroups'][gp]['groupProb']
+        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
         all_pop_prevalence.append(pop_prev)
 
     all_se = np.array(all_se)
@@ -192,8 +192,9 @@ def get_pos_prev(params_in, gp_name=None, dis_idx = None, AI_name = None, single
     # Else, use the probablilities from the equivalent diseases/ AIs.
     
     if single_disease:
-        tp_prev = params_in['diseaseGroups'][gp_name]['diseaseProbs'][dis_idx] * params_in['diseaseGroups'][gp_name]['groupProb'] * params_in['SeThreshs'][AI_name]
-        fp_prev = (1 - params_in['diseaseGroups'][gp_name]['diseaseProbs'][dis_idx]) * params_in['diseaseGroups'][gp_name]['groupProb'] * (1 - params_in['SpThreshs'][AI_name])
+        print('gp_name', gp_name)
+        tp_prev = params_in['diseaseGroups'][gp_name]['diseaseProbs'][0] * params_in['diseaseGroups'][gp_name]['groupProb'] * params_in['SeThreshs'][AI_name]
+        fp_prev = (1 - params_in['diseaseGroups'][gp_name]['diseaseProbs'][0]) * params_in['diseaseGroups'][gp_name]['groupProb'] * (1 - params_in['SpThreshs'][AI_name])
     else:
         tp_prev = params_in['diseaseGroups']['GroupEQ']['diseaseProbs'][0] * params_in['diseaseGroups']['GroupEQ']['groupProb'] * params_in['SeThresh']
         fp_prev = (1 - params_in['diseaseGroups']['GroupEQ']['diseaseProbs'][0]) * params_in['diseaseGroups']['GroupEQ']['groupProb'] * (1 - params_in['SpThresh'])
@@ -219,17 +220,56 @@ def service_time_duration(open_times, close_times):
     for index, (open_time, close_time) in enumerate(zip(open_times, close_times)):
         service += (close_time - open_time).total_seconds()
     return service / 60.
-        
+
+
+def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
+    means = []
+    var = []
+    gprobs = []
+    hprobs = []
+    arrival_rates = []
+    wait_times = []
+    for i in range(len(AI_group_hierarchy)):
+        groupname = AI_group_hierarchy[i]
+        diseasename = diseases_with_AI[i]
+        vendor = vendor_hierarchy[i]
+        servicerate = params['meanServiceTimes'][groupname][diseasename]
+        means.append(servicerate)
+        var.append(2*servicerate**2)
+        gprob = params['diseaseGroups'][groupname]['groupProb']*params['diseaseGroups'][groupname]['diseaseProbs'][0]
+        gprobs.append(gprob)
+        arrival_rate = gprob*params['arrivalRates']['non-interrupting']
+        arrival_rates.append(arrival_rate)
+    sum_gprobs = sum(gprobs)
+    sum_hprobs = sum(hprobs)
+    neg_mean = params['meanServiceTimes'][AI_group_hierarchy[0]]['non-diseased']
+    neg_var = 2*neg_mean**2 
+    means.append(neg_mean)
+    var.append(neg_var)
+    arrival_rates.append((1-sum_gprobs)*params['arrivalRates']['non-interrupting'])
+    wo = sum(np.array(arrival_rates)*np.array(var))
+    for i in range(len(var)):
+        if i == 0:
+            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+        else:
+            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i]) * np.array(means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+    return wait_times[-1], wait_times[chosen_dis_idx]
+
+
 ###########################################################################################################################
+
 parser = argparse.ArgumentParser(description="Description of your program")
-parser.add_argument("configFile", help="Path to the configuration file")
+parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
+parser.add_argument("--priorityType", dest='priority_type', choices=['NP', 'P'], help='Specify the priority type (NP or P)', required=True)
 args = parser.parse_args()
-configFile = args.configFile
+configFile = args.config_file
+priorityType = args.priority_type
 params, aDiseaseTree, AIs = get_all_params(configFile)
+
 # Assuming params['diseaseGroups'][jj]['diseaseNames'] is a list
 disease_hierarchy = [item for sublist in [params['diseaseGroups'][jj]['diseaseNames'] for jj in list(params['diseaseGroups'].keys())] for item in sublist]
 vendor_hierarchy =  list(params['AIinfo'].keys())
-print('vendor_hierarchy', vendor_hierarchy)
+#print('vendor_hierarchy', vendor_hierarchy)
 num_trials = inputHandler.num_trials
 write_timelogs = inputHandler.write_timelogs
 
@@ -289,11 +329,12 @@ theory_neg = calculator.get_theory_waitTime ('negative', 'preresume', params_all
 # For each disease in a group (diseases and groups have one-to-one correspondence here),
 # get the mean-wait times from simulation and theory. This can include diseases without AI.
 print('HIERARCHICAL:')
-
 for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
 
     # 1. Get the index of the chosen disease within its group. Used later to extract matching probs.
-    chosen_dis_idx = params['diseaseGroups'][chosen_gp]['diseaseNames'].index(chosen_dis)
+    #print(params['diseaseGroups'])
+    chosen_dis_idx = list(params['diseaseGroups'].keys()).index(chosen_gp) #***** MICHELLE EDIT
+    #print(chosen_dis_idx)
     
     # 2. Extract wait time from simulations, mean and 95% confidence interval.
     all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
@@ -305,7 +346,7 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
         all_trial_mean.append(trial_mean); all_trial_95lo.append(ci_95[0]); all_trial_95hi.append(ci_95[1])
         
     sim_mean = np.mean(all_trial_mean); sim_95lo = np.mean(all_trial_95lo); sim_95hi = np.mean(all_trial_95hi)
-    
+    print('sim mean', chosen_dis, np.mean(all_trial_mean))
    
     if chosen_dis in diseases_with_AI:
         chosen_AI = vendor_hierarchy[diseases_with_AI.index(chosen_dis)]
@@ -334,7 +375,7 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
             # Get the prevalence of positive patients in each case: hi, lo, and chosen disease.
             lo_pos_prev = get_pos_prev(params_lo)
             hi_pos_prev = get_pos_prev(params_hi)
-            chosen_dis_pos_prev = get_pos_prev(params, gp_name=chosen_gp, dis_idx = chosen_dis_idx, AI_name = chosen_AI, single_disease=True)
+            chosen_dis_pos_prev = get_pos_prev(params, gp_name = chosen_gp, dis_idx = chosen_dis_idx, AI_name = chosen_AI, single_disease=True)
     
             # Compute the mean wait-time for AI+ for chosen disease by taking the weighted difference of means.
             # Mean wait-time for chosen disease = (total wait-time from lo - total wait-time from hi) / num of chosen disease AI+ patients 
@@ -345,12 +386,18 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
         
         # Combine the postive and negative wait times to obtain the diseased wait-time.
         theory_chosen_dis = theory_pos*params['SeThreshs'][chosen_AI] + theory_neg*(1 - params['SeThreshs'][chosen_AI])
-        print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
-            
-    elif chosen_dis not in diseases_with_AI: 
+        theory_neg_NP, theory_chosen_dis_NP = get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy)
+        if priorityType == 'NP':
+            print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis_NP, sim_mean, sim_95lo, sim_95hi))
+        else:
+            print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
+    elif chosen_dis not in diseases_with_AI: 
         # If chosen disease does not have an AI, return the AI negative wait-times.
-        print(chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg, sim_mean, sim_95lo, sim_95hi))
+        if priorityType == 'NP':
+            print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis_NP, sim_mean, sim_95lo, sim_95hi))
+        else:
+            print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
 # Report wait-times for AI negative subgroup. (Optional.)
 all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
@@ -362,15 +409,48 @@ for trial_idx in np.arange(0, num_trials):
 
 sim_mean = np.mean(all_trial_mean); sim_95lo = np.mean(all_trial_95lo); sim_95hi = np.mean(all_trial_95hi)
 
-print('AI negative groups:', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg, sim_mean, sim_95lo, sim_95hi))
+if priorityType == 'NP':
+    print('non-diseased', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg, sim_mean, sim_95lo, sim_95hi))
+else:
+    print('non-diseased', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg_NP, sim_mean, sim_95lo, sim_95hi))
+
+
+# # Get PR results for each diseased subgroup from simulation and theory. 
+# # (This function is somewhat redundant. The two "for loops" below could be inluded in the code block above.) 
+
+# print('PRERESUME:')
+# theory_pr = calculator.get_theory_waitTime ('positive', 'preresume', params) # mean wait-time all AI-
+
+# for chosen_dis in disease_hierarchy:
+#     all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
+    
+#     for trial_idx in np.arange(0, num_trials):
+#         filtered_df = df.loc[(df['is_diseased'] == True) & (df['disease_name'] == chosen_dis) & (df['trial_num'] == trial_idx)]['preresume'].to_numpy()
+#         trial_mean = np.mean(filtered_df); ci_95 = get_95_ci(filtered_df)
+#         all_trial_mean.append(trial_mean); all_trial_95lo.append(ci_95[0]); all_trial_95hi.append(ci_95[1])
+        
+#     sim_mean = np.mean(all_trial_mean); sim_95lo = np.mean(all_trial_95lo); sim_95hi = np.mean(all_trial_95hi)
+#     print(chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_pr, sim_mean, sim_95lo, sim_95hi))
+    
+
+# # Get PR results for the non-diseased subgroup from simulation and theory.
+# all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
+
+# for trial_idx in np.arange(0, num_trials):
+#     filtered_df = df.loc[(df['is_positive'] == False) & (df['trial_num'] == trial_idx)]['preresume'].to_numpy()
+#     trial_mean = np.mean(filtered_df); ci_95 = get_95_ci(filtered_df)
+#     all_trial_mean.append(trial_mean); all_trial_95lo.append(ci_95[0]); all_trial_95hi.append(ci_95[1])
+
+# theory_pr = calculator.get_theory_waitTime ('negative', 'preresume', params) # mean wait-time all AI-
+# sim_mean = np.mean(all_trial_mean); sim_95lo = np.mean(all_trial_95lo); sim_95hi = np.mean(all_trial_95hi)
+# print('AI negatives', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_pr, sim_mean, sim_95lo, sim_95hi))
+
 
 
 # Get FIFO results for each diseased subgroup from simulation and theory. 
 # (This function is somewhat redundant. The two "for loops" below could be inluded in the code block above.) 
 print('FIFO:')
-
-theory_fifo = calculator.get_theory_waitTime ('positive', 'fifo', params) # mean wait-time all AI-
-print(theory_fifo)
+theory_fifo = calculator.get_theory_waitTime ('negative', 'fifo', params) # mean wait-time all AI-
 
 for chosen_dis in disease_hierarchy:
     all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
@@ -406,6 +486,22 @@ if write_timelogs:
         timelog_df = pd.DataFrame(timelog.values())
         hlog.to_excel('..outputs/timelog.xlsx')
 
+import matplotlib.pyplot as plt
+
+# Disease hierarchy
+wait_time_differences_fifo = [0] * len(disease_hierarchy)
+wait_time_differences_pr = [0] * len(disease_hierarchy)
+
+for disease in disease_hierarchy:
+    wait_time_differences = [10, 20, 15, 25]  # Example values, replace with your actual data
+
+# Plotting
+# plt.bar(disease_hierarchy, wait_time_differences)
+# plt.xlabel('Disease')
+# plt.ylabel('Wait Time Difference')
+# plt.title('Wait Time Difference for Different Diseases')
+# plt.savefig('outputs/wait_time_plot.png')  # Save the plot to a folder named 'outputs'
+# plt.show()
 
 # Test that the mean wait-time is the same for all queuing disciplines in M/M/1 queue with equal mean service times.
 # Useful when implementing a new queuing discipline.

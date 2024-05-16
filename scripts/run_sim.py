@@ -151,9 +151,11 @@ if __name__ == '__main__':
     #configFile = inputHandler.configFile
     verbose = True
     parser = argparse.ArgumentParser(description="Description of your program")
-    parser.add_argument("configFile", help="Path to the configuration file")
+    parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
+    parser.add_argument("--priorityType", dest='priority_type', choices=['NP', 'P'], help='Specify the priority type (NP or P)', required=True)
     args = parser.parse_args()
-    configFile = args.configFile
+    configFile = args.config_file
+    priorityType = args.priority_type
 
     ## Gather user-specified settings
     params = inputHandler.read_args(configFile, verbose)
