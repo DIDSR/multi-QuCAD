@@ -456,9 +456,9 @@ for trial_idx in np.arange(0, num_trials):
 sim_mean = np.mean(all_trial_mean); sim_95lo = np.mean(all_trial_95lo); sim_95hi = np.mean(all_trial_95hi)
 
 if priorityType == 'NP':
-    print('non-diseased', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg, sim_mean, sim_95lo, sim_95hi))
-else:
     print('non-diseased', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg_NP, sim_mean, sim_95lo, sim_95hi))
+else:
+    print('non-diseased', 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_neg, sim_mean, sim_95lo, sim_95hi))
 
 
 # # Get PR results for each diseased subgroup from simulation and theory. 
