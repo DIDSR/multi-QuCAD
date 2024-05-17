@@ -260,7 +260,54 @@ def service_time_duration(open_times, close_times):
 ###############################################################################################
 # revised function for computing non-preemptive theory for different groups, should work regardless of AI performance
 
+# def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
+#     means = []
+#     var = []
+#     gprobs = []
+#     arrival_rates = []
+#     wait_times = []
+#     FNprobs = []
+#     TNprobs = []
+#     neg_mean = params['meanServiceTimes'][AI_group_hierarchy[0]]['non-diseased'] #this assumes all non-diseased reading times are the same
+#     neg_var = 2*neg_mean**2 
+#     #below code assumes that each disease has an AI, will generalize later.
+#     for i in range(len(AI_group_hierarchy)):
+#         groupname = AI_group_hierarchy[i]
+#         diseasename = diseases_with_AI[i]
+#         vendor = vendor_hierarchy[i]
+#         servicerate = params['meanServiceTimes'][groupname][diseasename]
+#         probtruedis = params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
+#         probnondis = (1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0])/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
+#         means.append(servicerate*probtruedis+neg_mean*probnondis)
+#         var.append((2*servicerate**2)*probtruedis+neg_var*probnondis)
+#         gprob = (params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))*params['diseaseGroups'][groupname]['groupProb']
+#         gprobs.append(gprob)
+#         arrival_rate = gprob*params['arrivalRates']['non-interrupting']
+#         arrival_rates.append(arrival_rate)
+#         FNprobs.append((1-params['SeThreshs'][vendor])*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
+#         TNprobs.append(params['SpThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
+#     sum_gprobs = sum(gprobs)
+#     sum_TNprobs = sum(TNprobs)
+#     sum_FNprobs = sum(FNprobs)
+#     means.append((sum(np.array(FNprobs)*np.array(means))+sum(np.array(TNprobs)*neg_mean))/(sum_TNprobs+sum_FNprobs))
+#     var.append((sum(np.array(FNprobs)*np.array(var))+sum(np.array(TNprobs)*neg_var))/(sum_TNprobs+sum_FNprobs))
+#     arrival_rates.append((1-sum_gprobs)*params['arrivalRates']['non-interrupting'])
+#     wo = sum(np.array(arrival_rates)*np.array(var))#/2
+#     for i in range(len(var)):
+#         if i == 0:
+#             wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+#         else:
+#             wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i]) * np.array(means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+#     return wait_times[-1], wait_times[chosen_dis_idx]
+
+###################################################################
+# Further revised to remove assumption that non-diseased reading times are the same across conditions
+
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
+    means_alone = []
+    var_alone = []
+    neg_means = []
+    neg_vars = []
     means = []
     var = []
     gprobs = []
@@ -268,8 +315,6 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     wait_times = []
     FNprobs = []
     TNprobs = []
-    neg_mean = params['meanServiceTimes'][AI_group_hierarchy[0]]['non-diseased'] #this assumes all non-diseased reading times are the same
-    neg_var = 2*neg_mean**2 
     #below code assumes that each disease has an AI, will generalize later.
     for i in range(len(AI_group_hierarchy)):
         groupname = AI_group_hierarchy[i]
@@ -278,7 +323,14 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
         servicerate = params['meanServiceTimes'][groupname][diseasename]
         probtruedis = params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
         probnondis = (1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0])/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
-        means.append(servicerate*probtruedis+neg_mean*probnondis)
+        means_alone.append(servicerate)
+        var_alone.append(2*servicerate**2)
+        neg_service = params['meanServiceTimes'][AI_group_hierarchy[i]]['non-diseased']
+        print('neg_service', neg_service)
+        neg_var = 2*neg_service**2
+        neg_means.append(neg_service)
+        neg_vars.append(2*neg_service**2)
+        means.append(servicerate*probtruedis+neg_service*probnondis)
         var.append((2*servicerate**2)*probtruedis+neg_var*probnondis)
         gprob = (params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))*params['diseaseGroups'][groupname]['groupProb']
         gprobs.append(gprob)
@@ -289,17 +341,16 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     sum_gprobs = sum(gprobs)
     sum_TNprobs = sum(TNprobs)
     sum_FNprobs = sum(FNprobs)
-    means.append((sum(np.array(FNprobs)*np.array(means))+sum(np.array(TNprobs)*neg_mean))/(sum_TNprobs+sum_FNprobs))
-    var.append((sum(np.array(FNprobs)*np.array(var))+sum(np.array(TNprobs)*neg_var))/(sum_TNprobs+sum_FNprobs))
+    means.append((sum(np.array(FNprobs)*np.array(means_alone))+sum(np.array(TNprobs)*np.array(neg_means)))/(sum_TNprobs+sum_FNprobs))
+    var.append((sum(np.array(FNprobs)*np.array(var_alone))+sum(np.array(TNprobs)*np.array(neg_vars)))/(sum_TNprobs+sum_FNprobs))
     arrival_rates.append((1-sum_gprobs)*params['arrivalRates']['non-interrupting'])
-    wo = sum(np.array(arrival_rates)*np.array(var))#/2
+    wo = sum(np.array(arrival_rates)*np.array(var))
     for i in range(len(var)):
         if i == 0:
             wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
         else:
             wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i]) * np.array(means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
     return wait_times[-1], wait_times[chosen_dis_idx]
-
 
 
 ###########################################################################################################################
