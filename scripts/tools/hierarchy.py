@@ -59,7 +59,7 @@ class hierarchy (object):
 
             order.extend(aGroup['diseaseRanks'])
             diseaseNames.extend(aGroup['diseaseNames'])
-            groupNames.extend(aGroup)
+            groupNames.extend(groupname)
             for diseaseName in aGroup['diseaseNames']:
                 thisAI = [ainame for ainame, aiinfo in AIinfo.items() if aiinfo['targetDisease']==diseaseName]
                 aiName = None if len (thisAI) == 0 else thisAI[0]
