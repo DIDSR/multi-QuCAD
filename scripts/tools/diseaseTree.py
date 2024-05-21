@@ -203,7 +203,6 @@ class diseaseTree (object):
 
     def __init__ (self):       
         self._diseaseGroups = []
-        self._diseaseRanked = None
 
     def __str__ (self):
         summary  = '===============================================\n'
@@ -312,10 +311,6 @@ class diseaseTree (object):
                                     aGroup['diseaseProbs'],
                                     meanServiceTimes[groupname],
                                     AIs=AIsInGroup)
-
-        order = numpy.array ([agroup['diseaseRanks'][0] for _, agroup in diseaseDict.items()])
-        diseaseNames = numpy.array ([agroup['diseaseNames'][0] for _, agroup in diseaseDict.items()])
-        self._diseaseRanked = diseaseNames[order-1]
 
         self.check_groupProbs()
     
