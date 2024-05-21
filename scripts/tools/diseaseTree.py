@@ -23,6 +23,7 @@ class disease (object):
         * its name
         * which group does it belong to
         * disease prevalence within the group
+        * rank of disease in a hierarchical queue
         * radiologist mean reading time when reading a diseased case
     '''
 
@@ -30,12 +31,14 @@ class disease (object):
         
         self._diseaseName = None
         self._diseaseProb = None
+        self._diseaseRank = None
         self._groupBelong = None
         self._meanReadTime = None
 
     def __str__ (self):
         summary =  '| * {0}:\n'.format (self.diseaseName)
         summary += '|    - Belong to: {0}\n'.format (self.groupBelong)
+        summary += '|    - Rank: {0}\n'.format (self.diseaseRank)
         summary += '|    - Probability: {0}\n'.format (self.diseaseProb)        
         summary += '|    - Mean reading time: {0} min\n'.format (self.meanReadTime)
         return summary    
@@ -47,6 +50,13 @@ class disease (object):
     def diseaseName (self, diseaseName):
         self._diseaseName = diseaseName
     
+    @property
+    def diseaseRank (self):
+        return self._diseaseRank
+    @diseaseRank.setter
+    def diseaseRank (self, diseaseRank):
+        self._diseaseRank = diseaseRank
+
     @property
     def diseaseProb (self):
         return self._diseaseProb
@@ -124,10 +134,10 @@ class diseaseGroup (object):
 
         ''' Public function to add a non-disease into the array. Non-diseased
             cases are considered a "disease" object for coding purposes. Its
-            "disease" name is always non-diseased, and its disease prevalence
-            is 1 minus the diseaseProb of all diseases in this group. Therefore,
-            this function should always be called at the end after defining all
-            disease conditions in the group.
+            "disease" name is always non-diseased, and its rank is always -1.
+            Its disease prevalence is 1 minus the diseaseProb of all diseases
+            in this group. Therefore, this function should always be called at
+            the end after defining all disease conditions in the group.
 
             input
             -----
@@ -137,13 +147,14 @@ class diseaseGroup (object):
 
         aDisease = disease()
         aDisease.diseaseName = 'non-diseased'
+        aDisease.diseaseRank = -1
         aDisease.diseaseProb = 1 - sum ([aDisease.diseaseProb for aDisease in self._diseases]) 
         aDisease.meanReadTime = nonDiseaseMeanReadTime
         aDisease.groupBelong = self.groupName
         
         self._diseases.append (aDisease)
     
-    def add_disease (self, diseaseName, diseaseProb, meanReadTime):
+    def add_disease (self, diseaseName, diseaseRank, diseaseProb, meanReadTime):
         
         ''' Public function to add a disease condition into the array. Each
             disease condition is defined by its name, disease prevalence
@@ -152,6 +163,7 @@ class diseaseGroup (object):
             input
             -----
             diseaseName (str): name of the disease condition
+            diseaseRank (int): rank of disease in a hierarchical queue
             diseaseProb (float): disease prevalence within the group
             meanReadTime (float): radiologist mean reading time in minutes
                                   to read a diseased case.
@@ -159,6 +171,7 @@ class diseaseGroup (object):
 
         aDisease = disease()
         aDisease.diseaseName = diseaseName
+        aDisease.diseaseRank = diseaseRank
         aDisease.diseaseProb = diseaseProb
         aDisease.meanReadTime = meanReadTime
         aDisease.groupBelong = self.groupName
@@ -223,13 +236,15 @@ class diseaseTree (object):
             raise IOError ('Disease group probability do not add up.')    
     
     def add_aDiseaseGroup (self, diseaseGroupName, diseaseGroupProb,
-                           diseaseNames, diseaseProbs, meanReadTimes, AIs=[]):
+                           diseaseNames, diseaseRanks, diseaseProbs,
+                           meanReadTimes, AIs=[]):
 
         ''' Public function to add a disease group that may have multiple
             disease conditions. Note that diseaseNames, diseaseProbs, and
             meanReadTimes are in the same order as the cooresponding disease
             conditions. For example,
             diseaseNames  = [ 'A', 'B',  'C']
+            diseaseRanks  = [   1,   2,    3]
             diseaseProbs  = [0.05, 0.1, 0.07]
             meanReadTimes = [  10, 7.5, 13.8] 
             i.e. Disease A has a probability of 0.05 within this group and 
@@ -240,6 +255,7 @@ class diseaseTree (object):
             diseaseGroupName (str): group name
             diseaseGroupProb (float): fraction that a patient belongs to this group
             diseaseNames (array str): array of disease names
+            diseaseRanks (array int): ranking of disease conditions
             diseaseProbs (array float): array of disease prevalence within the group
             meanReadTimes (array float): radiologists' reading time in minutes 
             AIs (array AI): array of the AI objects that read every image in this group
@@ -252,8 +268,8 @@ class diseaseTree (object):
         ## Add the diseases first
         diseaseMeanReadTime = [meanReadTime for diseaseName, meanReadTime in meanReadTimes.items()
                                if not diseaseName=='non-diseased']
-        for name, prob, rTime in zip (diseaseNames, diseaseProbs, diseaseMeanReadTime):
-            aGroup.add_disease (name, prob, rTime)
+        for name, rank, prob, rTime in zip (diseaseNames, diseaseRanks, diseaseProbs, diseaseMeanReadTime):
+            aGroup.add_disease (name, rank, prob, rTime)
         ## At the end, add non-disease group
         aGroup.add_nondisease (meanReadTimes['non-diseased'])
         
@@ -270,8 +286,10 @@ class diseaseTree (object):
             inputs
             ------
             diseaseDict (dict): group information from config file
-                e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
-                      'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+                e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'],
+                                 'diseaseRanks':[1], 'diseaseProbs':[0.3]},
+                      'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'],
+                                 'diseaseRanks':[2], 'diseaseProbs':[0.6]}}
             meanServiceTimes (dict): radiologists' service time by groups and diseases
                                      e.g. {'GroupCT':{'A':10, 'non-diseased':7},
                                            'GroupUS':{'F':6, 'non-diseased':7}}

@@ -113,6 +113,58 @@ def get_theory_waitTime (aclass, variable, params):
 
     print ('Should not land here!')
 
+
+def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
+    means_alone = []
+    var_alone = []
+    neg_means = []
+    neg_vars = []
+    means = []
+    var = []
+    gprobs = []
+    arrival_rates = []
+    wait_times = []
+    FNprobs = []
+    TNprobs = []
+    #below code assumes that each disease has an AI, will generalize later.
+    for i in range(len(AI_group_hierarchy)):
+        groupname = AI_group_hierarchy[i]
+        diseasename = diseases_with_AI[i]
+        vendor = vendor_hierarchy[i]
+        servicerate = params['meanServiceTimes'][groupname][diseasename]
+        probtruedis = params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
+        probnondis = (1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0])/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
+        means_alone.append(servicerate)
+        var_alone.append(2*servicerate**2)
+        neg_service = params['meanServiceTimes'][AI_group_hierarchy[i]]['non-diseased']
+        print('neg_service', neg_service)
+        neg_var = 2*neg_service**2
+        neg_means.append(neg_service)
+        neg_vars.append(2*neg_service**2)
+        means.append(servicerate*probtruedis+neg_service*probnondis)
+        var.append((2*servicerate**2)*probtruedis+neg_var*probnondis)
+        gprob = (params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))*params['diseaseGroups'][groupname]['groupProb']
+        gprobs.append(gprob)
+        arrival_rate = gprob*params['arrivalRates']['non-interrupting']
+        arrival_rates.append(arrival_rate)
+        FNprobs.append((1-params['SeThreshs'][vendor])*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
+        TNprobs.append(params['SpThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
+    sum_gprobs = sum(gprobs)
+    sum_TNprobs = sum(TNprobs)
+    sum_FNprobs = sum(FNprobs)
+    means.append((sum(np.array(FNprobs)*np.array(means_alone))+sum(np.array(TNprobs)*np.array(neg_means)))/(sum_TNprobs+sum_FNprobs))
+    var.append((sum(np.array(FNprobs)*np.array(var_alone))+sum(np.array(TNprobs)*np.array(neg_vars)))/(sum_TNprobs+sum_FNprobs))
+    arrival_rates.append((1-sum_gprobs)*params['arrivalRates']['non-interrupting'])
+    wo = sum(np.array(arrival_rates)*np.array(var))
+    for i in range(len(var)):
+        if i == 0:
+            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+        else:
+            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i]) * np.array(means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+    return wait_times[-1], wait_times[chosen_dis_idx]
+
+
+
 ########################################
 ## Classic queueing state probabilities
 ########################################

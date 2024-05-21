@@ -13,59 +13,68 @@
 ################################################
 ## Clinical setting
 ################################################
-isPreemptive                   True # True if preemptive priority i.e. radiologist is interrupted immediately
-                                    # upon arrival of a higher priority case.
-                                    # False if non-preemptive priority i.e. radiologist finishes the lower-
-                                    # priority case first before reading the new-coming higher priority case
+isPreemptive                   True # True if preemptive priority i.e. radiologist is
+                                    # interrupted immediately upon arrival of a higher
+                                    # priority case. False if non-preemptive priority
+                                    # i.e. radiologist finishes the lower-priority case
+                                    # first before reading the new-coming higher priority case
 traffic                        0.8  # Hospital busyness:
                                     # Between 0.0 (very quiet) and 0.95 (very congested)
 fractionED                     0.0  # Fraction of interrupting patients:
-                                    # Between 0.0 (no interrupting images) and 1.0 (all images are interrupting)
+                                    # Between 0.0 (no interrupting images) and 1.0 (all
+                                    # images are interrupting)
 nRadiologists                  1    # Number of radiologists reading during the time window:
                                     # At least 1
-meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in minutes] for interrupting cases
+meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in minutes]
+                                    # for interrupting cases
 
 ################################################
 ## Group and disease parameters
 ################################################
 ##
-## Each block represents an image group. A group consists of images all of which are the intended population
-## of an AI (if there is an AI for that image type) or all of which will not be analyzed by any AIs.
+## Each block represents an image group. A group consists of images all of which are the
+## intended population of an AI (if there is an AI for that image type) or all of which
+## will not be analyzed by any AIs.
 ##
 ## Each block has 4 lines:
 ## Line 1: Group name (provided by the user)
-## Line 2: Percentage of patients that belong to this group with respect to number of patients in the queue.
-##         This line must start with "groupProb" followed by a value (between 0 and 1) provided by the user.
-##         All groupProb from all groups must add up to 1.
-## Line 3: Information about the disease involved in this group. This line must start with "disease" followed
-##         by 3 inputs provided by the user. First is the disease name, second is the disease prevalence
-##         *within the group*, and third is the radiologist's mean reading time for diseased cases in minutes.
-##         If there are more than 1 disease in the same group, all disease prevalence *within the group* must
-##         add up to 1.
-## Line 4: Radiologist's mean reading time for non-diseased cases in minutes. This line must start with
-##         "meanServiceTimeNonDiseasedMin" followed by a value provided by the user.
+## Line 2: Percentage of patients that belong to this group with respect to number of
+##         patients in the queue. This line must start with "groupProb" followed by a
+##         value (between 0 and 1) provided by the user. All groupProb from all groups
+##         must add up to 1.
+## Line 3: Information about the disease involved in this group. This line must start
+##         with "disease" followed by 4 inputs provided by the user. First is the disease
+##         name, and second is the hierarchical ranking for the hierarchy queue scenario.
+##         Third is the disease prevalence *within the group*, and forth is the
+##         radiologist's mean reading time for diseased cases in minutes. If there are
+##         more than 1 disease in the same group, all disease prevalence *within the group*
+##         must add up to 1.
+## Line 4: Radiologist's mean reading time for non-diseased cases in minutes. This line
+##         must start with "meanServiceTimeNonDiseasedMin" followed by a value provided
+##         by the user.
 ##
-## Note that group names (Line 1) and disease names (Line 3) corresponds to the CADt AI in the next section.
+## Note that group names (Line 1) and disease names (Line 3) corresponds to the CADt AI
+## in the next section.
 ##
 
 GroupCT
 groupProb                      0.25
-disease                        A   0.4   10
+disease                        A   1   0.4   10
 meanServiceTimeNonDiseasedMin  10        
 
 GroupUS
 groupProb                      0.25
-disease                        B   0.4   10
+disease                        B   3   0.4   10
 meanServiceTimeNonDiseasedMin  10
 
 GroupMR
 groupProb                      0.25
-disease                        C   0.4   10
+disease                        C   2   0.4   10
 meanServiceTimeNonDiseasedMin  10
 
 GroupCX
 groupProb                      0.25
-disease                        D   0.4   10
+disease                        D   4   0.4   10
 meanServiceTimeNonDiseasedMin  10
 
 ################################################

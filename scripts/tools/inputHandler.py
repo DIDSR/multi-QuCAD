@@ -248,11 +248,13 @@ def extract_group_and_disease_parameters (groupDiseaseParameters):
         outputs
         -------
         diseaseGroups (dict): parameters and their values by group
-                              e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
-                                    'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+                              e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'],
+                                               'diseaseRanks':[1], 'diseaseProbs':[0.3]},
+                                    'GroupUS':{'groupProb':0.6, 'diseaseNames':['B'],
+                                               'diseaseRanks':[2], 'diseaseProbs':[0.6]}}
         meanServiceTimes (dict): radiologists' service time by groups and diseases
                                  e.g. {'GroupCT':{'A':10, 'non-diseased':7},
-                                       'GroupUS':{'F':6, 'non-diseased':7}}
+                                       'GroupUS':{'B':6, 'non-diseased':7}}
     '''
 
     ## Extract each sub-section by group name
@@ -263,7 +265,7 @@ def extract_group_and_disease_parameters (groupDiseaseParameters):
         # Detect/update the current group - only one word in this line
         if not ' ' in line.strip():
             currentGroup = line
-            diseaseGroups[currentGroup] = {'diseaseNames':[], 'diseaseProbs':[]}
+            diseaseGroups[currentGroup] = {'diseaseNames':[], 'diseaseProbs':[], 'diseaseRanks':[]}
             meanServiceTimes[currentGroup] = {}
             continue
         ## For the rest, the first element is the parameter name followed by the values
@@ -272,8 +274,9 @@ def extract_group_and_disease_parameters (groupDiseaseParameters):
         values = values.strip()
         #  "disease" has 3 values
         if parameter=='disease':
-            name, prob, readTime = [v.strip() for v in values.split (' ') if len (v.strip())>0]
+            name, rank, prob, readTime = [v.strip() for v in values.split (' ') if len (v.strip())>0]
             diseaseGroups[currentGroup]['diseaseNames'].append (name.strip())
+            diseaseGroups[currentGroup]['diseaseRanks'].append (int (rank))
             diseaseGroups[currentGroup]['diseaseProbs'].append (float (prob))
             meanServiceTimes[currentGroup][name] = float (readTime)
             continue
@@ -714,7 +717,7 @@ def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False)
 
         outputs
         -------
-        effective mu (float): effective reading rate for this priority class
+        effective mu (float): effective reading rate [1/min] for this priority class
         condProbs (dict): probability that a patient belongs to this priority
                           class with respect to all patients
     '''
@@ -789,7 +792,19 @@ def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False)
 
 def get_muNonEm (prob_pos_neg, mus):
 
-    '''
+    ''' Function to compute effective reading rate for the entire queue.
+
+        inputs
+        ------
+        probs_pos_neg (dict): probability that a patient being negative or positive
+                        (regardless of the disease conditions or disease truth
+                        or group that it belongs to). This is expected to be
+                        the outputs of get_isPos_isNeg().
+        mus (dict): effective reading rate for both priority class
+
+        output
+        ------
+        effective mu (float): effective reading rate [1/min] for the entire queue
     '''
 
     meanReadingTime = 0
@@ -803,6 +818,10 @@ def get_muNonEm (prob_pos_neg, mus):
     return 1/meanReadingTime
 
 def get_hier ():
+
+    
+
+
     hier_classes_dict = {}
     for ii, vendor_name in enumerate(hier.vendor_hierarchy):
     # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
@@ -863,7 +882,6 @@ def add_params (AIs, params, aDiseaseTree):
                               'non-interrupting':(1-params['prob_isInterrupting'])*params['lambda_effective'],
                               'positive':params['prob_isPositive']*params['lambda_effective'],
                               'negative':params['prob_isNegative']*params['lambda_effective']}             
-    
     
     ## Simulation times
     nPatientsPerTrial = params['nPatientsTarget'] + sum (params['nPatientsPads'])

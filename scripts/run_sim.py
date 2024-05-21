@@ -205,10 +205,6 @@ if __name__ == '__main__':
     oneSim = simulator.simulator ()
     oneSim.set_params (params)
     oneSim.track_log = False
-    hier_classes_dict = {}
-    for ii, vendor_name in enumerate(hier.vendor_hierarchy):
-    # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
-        hier_classes_dict.update({vendor_name : {'groupName': hier.AI_group_hierarchy[ii], 'disease_num':ii+3}})
     oneSim.simulate_queue (AIs, aDiseaseTree, hier_classes_dict)
     print_sim_performance (oneSim, AIs, params)
     params['n_patients_per_class'] = {qtype:{aclass:get_n_interrupting_patients (oneSim, qtype) if aclass=='interrupting' else \
