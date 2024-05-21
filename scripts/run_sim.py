@@ -13,6 +13,10 @@
 ## 05/08/2023
 ## ----------
 ## * Add in properties for multi-AI scenario
+##
+## 05/20/2023
+## ----------
+## * Cleaned up for publishing multi-QuCAD 
 #######################################################################################################
 
 ################################
@@ -143,19 +147,16 @@ def print_sim_performance (oneSim, AIs, params):
     print('fifo: ', hier.df_fifo_mean, hier.df_95_ci_fifo)
     print('theory: ', hier.df_theory)
 
-
 ################################
 ## Script starts here!
 ################################ 
 if __name__ == '__main__':
-    #configFile = inputHandler.configFile
+
     verbose = True
     parser = argparse.ArgumentParser(description="Description of your program")
     parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
-    parser.add_argument("--priorityType", dest='priority_type', choices=['NP', 'P'], help='Specify the priority type (NP or P)', required=True)
     args = parser.parse_args()
     configFile = args.config_file
-    priorityType = args.priority_type
 
     ## Gather user-specified settings
     params = inputHandler.read_args(configFile, verbose)
