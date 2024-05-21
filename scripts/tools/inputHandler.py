@@ -387,12 +387,29 @@ def read_configFile (configFile):
 
 def get_ppvs_npvs (aDiseaseTree):
     
-    # Each AI algorithm only detects one disease. Even if an AI device claims to
-    # detect multiple diseases, there are several underlying algorithm - one per
-    # disease. 
-    # So, for each algorithm targeting at one disease, we have a ppv. For a group
-    # with multiple AIs, the ppv and npv are calculated individually per AI based
-    # on the targeted disease only.
+    ''' Each AI algorithm only detects one disease. Even if an AI device claims to
+        detect multiple diseases, there are several underlying algorithm - one per
+        disease. 
+
+        For each algorithm targeting at one disease, we have a ppv. For a group
+        with multiple AIs, the ppv and npv are calculated individually per AI based
+        on the targeted disease only. PPV and NPV is based on disease prevalence
+        within the group. This aligns with values typically reported by sponsors
+        in a submission.
+
+        input
+        -----
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.                
+
+        output
+        ------
+        probs (dict): PPV and NPV for all AIs involved
+                      e.g. {'ppv': {'groupA':{'AI_A1':ppv1, 'AI_A2':ppv2},
+                                    'groupB':{'AI_B1':ppv3}              },
+                            'npv': {'groupA':{'AI_A1':npv1, 'AI_A2':npv2},
+                                    'groupB':{'AI_B1':npv3}              }}
+    '''
     
     probs = {'ppv':{}, 'npv':{}}
 
@@ -423,64 +440,91 @@ def get_ppvs_npvs (aDiseaseTree):
     return probs
 
 def get_prob (aDiseaseTree):
+
+    ''' There is a probability associated with each disease state that takes
+        into account all AIs within the same group.
     
-    # There is a probability associated with each disease state that takes
-    # into account all AIs within the same group.
     
-    #
-    #                              AI-A
-    #                              ====
-    #                         / A   TP
-    #                        /                     
-    #                    / + -- B   FP
-    #                   /    \  
-    #                  /      \ ND  FP
-    #        / Group 1       
-    #       / (AI-A)   \      / A   FN
-    #      /            \    /
-    #     /              \ - -- B   TN
-    #    /                   \
-    #   /                     \ ND  TN
-    #   \
-    #    \                              AI-C    AI-D
-    #     \                             ====    ====
-    #      \                        / C  TP      FP 
-    #       \                      /
-    #        \                 / + -- D  FP      TP
-    #         \               /  \ \
-    #          \             /    \ \ E  FP      FP
-    #           \           /      \
-    #            \         /        \ ND FP      FP
-    #             \ Group 2              
-    #              (AI-C,  \
-    #               AI-D)   \ 
-    #                        \      / C  FN      TN
-    #                         \    /
-    #                          \ - -- D  TN      FN
-    #                            \ \
-    #                             \ \ E  TN      TN
-    #                              \
-    #                               \ ND TN      TN
-    #
-    # The probability calculates here is the last layers i.e. Given a
-    # group and given a positive/negative subgroup, what is the prob
-    # of a disease state. For example, in group 1+, what is the prob
-    # of getting a truly diseased with A? Same for getting a truly
-    # diseased with B (that AI-A is not trained to identify)? And that
-    # for truly non-diseased patients?
-    #
-    # For a group with two AIs, P(+) of a disease includes the TP by
-    # one AI and FP by another AI. Assuming that all diseases within the
-    # group are uncorrelated and that there are enough patients for each
-    # disease condition subgroup, the positive probability is just the
-    # sum of P(+A) for all diseases. Therefore, for each AI in this group,
-    # we need to sum up the probabilities. In cases where one or more
-    # disease conditions in the group do not have a dedicated AI to look
-    # for that condition, no extra term is needed; its effect is included
-    # in the (1-Sp)*(1-pA) term. Note that there is an extra factor of 2
-    # (or more depending on the number of AIs involved in the group) bec
-    # the same patient is viewed twice, each by a different AI.
+                                  AI-A
+                                  ====
+                             / A   TP
+                            /                     
+                        / + -- B   FP
+                       /    \  
+                      /      \ ND  FP
+            / Group 1       
+           / (AI-A)   \      / A   FN
+          /            \    /
+         /              \ - -- B   TN
+        /                   \
+       /                     \ ND  TN
+       \
+        \                              AI-C    AI-D
+         \                             ====    ====
+          \                        / C  TP      FP 
+           \                      /
+            \                 / + -- D  FP      TP
+             \               /  \ \
+              \             /    \ \ E  FP      FP
+               \           /      \
+                \         /        \ ND FP      FP
+                 \ Group 2              
+                  (AI-C,  \
+                   AI-D)   \ 
+                            \      / C  FN      TN
+                             \    /
+                              \ - -- D  TN      FN
+                                \ \
+                                 \ \ E  TN      TN
+                                  \
+                                   \ ND TN      TN
     
+        The probability calculates here is the last layers i.e. Given a
+        group and given a positive/negative subgroup, what is the prob
+        of a disease state. For example, in group 1+, what is the prob
+        of getting a truly diseased with A? Same for getting a truly
+        diseased with B (that AI-A is not trained to identify)? And that
+        for truly non-diseased patients?
+    
+        For a group with two AIs, P(+) of a disease includes the TP by
+        one AI and FP by another AI. Assuming that all diseases within the
+        group are uncorrelated and that there are enough patients for each
+        disease condition subgroup, the positive probability is just the
+        sum of P(+A) for all diseases. Therefore, for each AI in this group,
+        we need to sum up the probabilities. In cases where one or more
+        disease conditions in the group do not have a dedicated AI to look
+        for that condition, no extra term is needed; its effect is included
+        in the (1-Sp)*(1-pA) term. Note that there is an extra factor of 2
+        (or more depending on the number of AIs involved in the group) bec
+        the same patient is viewed twice, each by a different AI.
+    
+        input
+        -----
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.                
+
+        output
+        ------
+        probs (dict): Given a group and given a positive/negative subgroup,
+                      what is the prob of a disease state. Based on the
+                      above example, the output of this function has this
+                      structure.
+                      e.g. {'group1':{'+':{diseaseA'    : {'AI-A_TP':p1},
+                                           diseaseB'    : {'AI-A_FP':p2},
+                                           non-diseased': {'AI-A_FP':p3}},
+                                     {'-':{diseaseA'    : {'AI-A_FN':p4},
+                                           diseaseB'    : {'AI-A_TN':p5},
+                                           non-diseased': {'AI-A_TN':p6}}},
+                            'group2':{'+':{diseaseC'    : {'AI-C_TP':p7 , 'AI-D_FP':p15},
+                                           diseaseD'    : {'AI-C_FP':p8 , 'AI-D_TP':p16},
+                                           diseaseE'    : {'AI-C_FP':p9 , 'AI-D_FP':p17},
+                                           non-diseased': {'AI-C_FP':p10, 'AI-D_FP':p18}},
+                                     {'-':{diseaseC'    : {'AI-C_FN':p11, 'AI-D_TN':p19},
+                                           diseaseD'    : {'AI-C_TN':p12, 'AI-D_FN':p20},
+                                           diseaseE'    : {'AI-C_TN':p13, 'AI-D_TN':p21},
+                                           non-diseased': {'AI-C_TN':p14, 'AI-D_TN':p22}}}}
+    '''
+
     probs = {}
 
     for aGroup in aDiseaseTree.diseaseGroups:
@@ -522,8 +566,50 @@ def get_prob (aDiseaseTree):
 
 def get_positive_negative_probs (aDiseaseTree, probs):
     
-    # This function gets the probability (per group) that a patient with disease name
-    # is called positive by either AI.
+    ''' This function gets the probability (per group) that a patient with
+        disease name is called positive by any AIs involved in the group.
+    
+        inputs
+        ------
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
+        probs (dict): Given a group and given a positive/negative subgroup,
+                      what is the prob of a disease state. This is expected
+                      to be the outputs of get_prob().
+                      e.g. {'group1':{'+':{diseaseA'    : {'AI-A_TP':p1},
+                                           diseaseB'    : {'AI-A_FP':p2},
+                                           non-diseased': {'AI-A_FP':p3}},
+                                     {'-':{diseaseA'    : {'AI-A_FN':p4},
+                                           diseaseB'    : {'AI-A_TN':p5},
+                                           non-diseased': {'AI-A_TN':p6}}},
+                            'group2':{'+':{diseaseC'    : {'AI-C_TP':p7 , 'AI-D_FP':p15},
+                                           diseaseD'    : {'AI-C_FP':p8 , 'AI-D_TP':p16},
+                                           diseaseE'    : {'AI-C_FP':p9 , 'AI-D_FP':p17},
+                                           non-diseased': {'AI-C_FP':p10, 'AI-D_FP':p18}},
+                                     {'-':{diseaseC'    : {'AI-C_FN':p11, 'AI-D_TN':p19},
+                                           diseaseD'    : {'AI-C_TN':p12, 'AI-D_FN':p20},
+                                           diseaseE'    : {'AI-C_TN':p13, 'AI-D_TN':p21},
+                                           non-diseased': {'AI-C_TN':p14, 'AI-D_TN':p22}}}}
+
+        output
+        ------
+        newProbs (dict): Probability that a patient of a disease condition is
+                         positive by any AIs in the queue.
+                         e.g. {'group1':{'+':{'diseaseA'    :{'is_positive':b1},
+                                              'diseaseB'    :{'is_positive':b2},
+                                              'non-diseased':{'is_positive':b3}},
+                                         '-':{'diseaseA'    :{'is_negative':b4},
+                                              'diseaseB'    :{'is_negative':b5},
+                                              'non-diseased':{'is_negative':b6}}},
+                               'group2':{'+':{'diseaseC'    :{'is_positive':b7},
+                                              'diseaseD'    :{'is_positive':b8},
+                                              'diseaseE'    :{'is_positive':b9},
+                                              'non-diseased':{'is_positive':b10}},
+                                         '-':{'diseaseC'    :{'is_negative':b11},
+                                              'diseaseD'    :{'is_negative':b12},
+                                              'diseaseE'    :{'is_negative':b13},
+                                              'non-diseased':{'is_negative':b14}}}}
+    '''
     
     newProbs = deepcopy (probs)
     
@@ -550,12 +636,42 @@ def get_positive_negative_probs (aDiseaseTree, probs):
     return newProbs
 
 def get_isPos_isNeg (aDiseaseTree, probs):
-    
-    ## This is different from get_positive_negative_probs() in a sense
-    ## that this function outputs the overall probability of a patient
-    ## being negative or positive (regardless of the disease conditions
-    ## or disease truth or group that it belongs to).
-    
+
+    ''' This is different from get_positive_negative_probs() in a sense
+        that this function outputs the overall probability of a patient
+        being negative or positive (regardless of the disease conditions
+        or disease truth or group that it belongs to).
+
+        inputs
+        ------
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
+        probs (dict): Probability that a patient of a disease condition is
+                      positive by any AIs in the queue. This is expected
+                      to be the outputs of get_positive_negative_probs().
+                      e.g. {'group1':{'+':{'diseaseA'    :{'is_positive':b1},
+                                           'diseaseB'    :{'is_positive':b2},
+                                           'non-diseased':{'is_positive':b3}},
+                                      '-':{'diseaseA'    :{'is_negative':b4},
+                                           'diseaseB'    :{'is_negative':b5},
+                                           'non-diseased':{'is_negative':b6}}},
+                            'group2':{'+':{'diseaseC'    :{'is_positive':b7},
+                                           'diseaseD'    :{'is_positive':b8},
+                                           'diseaseE'    :{'is_positive':b9},
+                                           'non-diseased':{'is_positive':b10}},
+                                      '-':{'diseaseC'    :{'is_negative':b11},
+                                           'diseaseD'    :{'is_negative':b12},
+                                           'diseaseE'    :{'is_negative':b13},
+                                           'non-diseased':{'is_negative':b14}}}}
+                                           
+        output
+        ------
+        PosNegProb (dict): probability that a patient being negative or positive
+                           (regardless of the disease conditions or disease truth
+                           or group that it belongs to).
+                           e.g. {'positive':q1, 'negative':q2}
+    '''
+
     PosNegProb = {}
     
     for priorityClass in ['positive', 'negative']:
@@ -574,6 +690,35 @@ def get_isPos_isNeg (aDiseaseTree, probs):
 
 def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False):
     
+    ''' Function to calculate 1. effective reading time for this priority class and
+        2. probability that a patient belongs to this priority class with respect to
+        all patients (priority class: positive or negative). 
+
+        inputs
+        ------
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
+        probs (dict): Given a group and given a positive/negative subgroup,
+                      what is the prob of a disease state. This is expected
+                      to be the outputs of get_prob().
+        probs_pos_neg (dict): probability that a patient being negative or positive
+                              (regardless of the disease conditions or disease truth
+                              or group that it belongs to). This is expected to be
+                              the outputs of get_isPos_isNeg().
+        probs_ppv_npv (dict): PPV and NPV for all AIs involved. This is expected to be
+                              the outputs of get_ppvs_npvs().
+        mus (dict): service rate (i.e. 1/meanReadTime) 
+                    e.g. {'GroupCT':{'A':1/10, 'non-diseased':1/7},
+                          'GroupUS':{'F':1/6, 'non-diseased':1/7}}
+        doNeg (bool): True if calculation is for AI-negative. False if for AI-positive.
+
+        outputs
+        -------
+        effective mu (float): effective reading rate for this priority class
+        condProbs (dict): probability that a patient belongs to this priority
+                          class with respect to all patients
+    '''
+
     meanReadingTime = 0
     priorityClass = 'negative' if doNeg else 'positive'
     condProbs = {}
@@ -643,7 +788,10 @@ def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False)
     return 1/meanReadingTime, condProbs
 
 def get_muNonEm (prob_pos_neg, mus):
-       
+
+    '''
+    '''
+
     meanReadingTime = 0
 
     for priorityClass in ['positive', 'negative']:
@@ -653,6 +801,12 @@ def get_muNonEm (prob_pos_neg, mus):
         
     # Inverse to get the effective service rate
     return 1/meanReadingTime
+
+def get_hier ():
+    hier_classes_dict = {}
+    for ii, vendor_name in enumerate(hier.vendor_hierarchy):
+    # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
+        hier_classes_dict.update({vendor_name : {'groupName': hier.AI_group_hierarchy[ii], 'disease_num':ii+3}})
 
 def add_params (AIs, params, aDiseaseTree):
 
@@ -664,10 +818,13 @@ def add_params (AIs, params, aDiseaseTree):
         ------
         params (dict): dictionary with user inputs
         anAI (AI): CADt with a diagnostic performance from user input
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
 
         output
         ------
         params (dict): dictionary capsulating all simulation parameters
+                       and analytical time-savings.
     '''
 
     ## Probabilities
@@ -729,3 +886,6 @@ def add_params (AIs, params, aDiseaseTree):
     #        params['theory'][aclass][key] = get_theory_waitTime (aclass, variable, params)    
 
     return params
+
+
+
