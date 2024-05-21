@@ -9,6 +9,7 @@
 ################################
 ## Import packages
 ################################ 
+import numpy
 
 ################################
 ## Define constants
@@ -202,6 +203,7 @@ class diseaseTree (object):
 
     def __init__ (self):       
         self._diseaseGroups = []
+        self._diseaseRanked = None
 
     def __str__ (self):
         summary  = '===============================================\n'
@@ -213,6 +215,9 @@ class diseaseTree (object):
         
     @property
     def diseaseGroups (self): return self._diseaseGroups
+
+    @property
+    def diseaseRanked (self): return self._diseaseRanked
 
     def get_groupNames (self):
 
@@ -303,9 +308,14 @@ class diseaseTree (object):
             ## Add a new disease group
             self.add_aDiseaseGroup (groupname, aGroup['groupProb'],
                                     aGroup['diseaseNames'],
+                                    aGroup['diseaseRanks'],
                                     aGroup['diseaseProbs'],
                                     meanServiceTimes[groupname],
                                     AIs=AIsInGroup)
+
+        order = numpy.array ([agroup['diseaseRanks'][0] for _, agroup in diseaseDict.items()])
+        diseaseNames = numpy.array ([agroup['diseaseNames'][0] for _, agroup in diseaseDict.items()])
+        self._diseaseRanked = diseaseNames[order-1]
 
         self.check_groupProbs()
     
@@ -335,5 +345,3 @@ class diseaseTree (object):
         '''
 
         return 1 - self.get_diseased_prevalence()
-        
-        
