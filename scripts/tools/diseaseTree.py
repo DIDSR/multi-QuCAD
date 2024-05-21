@@ -2,16 +2,14 @@
 ##
 ## By Elim Thompson (11/27/2020)
 ##
-## This script encapsulates a disease class.
+## This script defines classes for each disease, each group, and a tree of
+## diseases. 
 ###########################################################################
 
 ################################
 ## Import packages
 ################################ 
-import numpy, pandas, scipy
-from copy import deepcopy
 
-import AI
 ################################
 ## Define constants
 ################################

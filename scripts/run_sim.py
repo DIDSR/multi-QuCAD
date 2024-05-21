@@ -14,7 +14,7 @@
 ## ----------
 ## * Add in properties for multi-AI scenario
 ##
-## 05/20/2023
+## 05/20/2024
 ## ----------
 ## * Cleaned up for publishing multi-QuCAD 
 #######################################################################################################
@@ -41,6 +41,27 @@ get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_
 ## Define functions
 ################################ 
 def create_disease_tree (diseaseGroups, meanServiceTimes, AIs):
+
+    ''' Function to create a disease tree instance that encapsulate all
+        the group/disease information including group probability, disease
+        prevalence, mean reading times, which AI associate to which group
+        and disease, and their operating thresholds. 
+
+        inputs
+        ------
+        diseaseGroups (dict): group information from config file
+            e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
+                'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+        meanServiceTimes (dict): radiologists' service time by groups and diseases
+            e.g. {'GroupCT':{'A':10, 'non-diseased':7},
+                'GroupUS':{'F':6, 'non-diseased':7}}
+        
+        outputs
+        -------
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
+        
+    '''
 
     ## AIs should be already updated with user-set threshold 
     aDiseaseTree = diseaseTree.diseaseTree ()

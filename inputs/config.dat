@@ -5,7 +5,7 @@
 ## to command line arguments. This file can be parsed to `run_sim.py` via
 ## `--configFile` flag.
 ## 
-## 05/20/2023
+## 05/20/2024
 ## ----------
 ## * adding new parameters for multi-QuCAD 
 ####################################################################################
