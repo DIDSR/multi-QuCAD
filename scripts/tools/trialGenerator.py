@@ -14,7 +14,6 @@
 ################################ 
 import pandas, numpy, logging
 from . import simulator
-from . import hier
 
 ################################
 ## Define constants
@@ -25,11 +24,11 @@ from . import hier
 ## with this highest-priority group, without-CADt scenario is a
 ## 2-priority-class system and is no longer fifo. However, this
 ## software still calls this without-CADt scenario "fifo". 
-queuetypes = ['fifo', 'preresume'] 
+queuetypes = ['fifo', 'preresume', 'hierarchical'] 
 ## Names of priority classes in with CADt scenario. Positive
 ## and negative patients will be lumped into one priority
 ## class in the without-CADt scenario.
-priorityClasses = ['interrupting', 'positive', 'negative']
+priorityClasses = {'interrupting':1, 'positive':2, 'negative':99}
 
 ## Simulation default parameters
 ##  1. number of days during simulation. Default: 1 month

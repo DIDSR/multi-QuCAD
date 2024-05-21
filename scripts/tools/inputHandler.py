@@ -180,7 +180,7 @@ def read_args (configFile):
         print ('')
 
     check_user_inputs (params)
-    return params
+    return add_params (params) 
 
 def extract_clinical_simulation_settings (content):
 

@@ -51,7 +51,7 @@
 ################################
 ## Import packages
 ################################ 
-import numpy, pandas, queue, logging, argparse
+import numpy, pandas, queue, logging
 from copy import deepcopy
 
 from . import patient, radiologist
@@ -1671,7 +1671,7 @@ class simulator (object):
             # | New customer *will* arrive
             # +-------------------------------
             apatient = patient.patient (patient_counter, self._diseaseGroups, self._fractionED,
-                                        self.arrivalRate, newArrivalTime, dict_hierarchies)
+                                        self.arrivalRate, newArrivalTime)
             #  Decide the AI call and service duration by the first Fiona (FIFO)
             is_positives, is_positive, prior_class, hier_class = self._AI_is_positive (apatient, groups_with_AI, aDiseaseTree)
             apatient.is_positives, apatient.is_positive = is_positives, is_positive

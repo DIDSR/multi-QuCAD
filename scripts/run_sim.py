@@ -27,15 +27,9 @@ import numpy, pickle, time, os, sys, cProfile, io, pstats, argparse
 sys.path.insert(0, os.getcwd()+'\\tools')
 from tools import inputHandler, simulator, trialGenerator
 
-#import logging
-#logging.basicConfig(level=logging.DEBUG)
-
 ################################
 ## Define lambdas
 ################################ 
-get_n_positive_patients = lambda oneSim, qtype:len (oneSim.get_positive_records(qtype))
-get_n_negative_patients = lambda oneSim, qtype:len (oneSim.get_negative_records(qtype))
-get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_records(qtype))
 
 ################################
 ## Define functions
@@ -114,16 +108,14 @@ if __name__ == '__main__':
     configFile = args.config_file
 
     ## Gather user-specified settings
-    params = inputHandler.read_args(configFile)
+    params, AIs, aDiseaseTree = inputHandler.read_args(configFile)
 
+    ## Track runtime profile if turned on
     pr = None
     if params['doRunTime']:
         pr = cProfile.Profile()
         pr.enable()
     
-    ## Add additional params
-    params, AIs, aDiseaseTree = inputHandler.add_params (params)
-
     ## Check AI performance
     oneSim = simulator.simulator ()
     oneSim.set_params (params)
