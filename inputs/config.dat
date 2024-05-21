@@ -70,6 +70,7 @@ meanServiceTimeNonDiseasedMin  10
 GroupMR
 groupProb                      0.25
 disease                        C   2   0.4   10
+disease                        E   5   0.1   10
 meanServiceTimeNonDiseasedMin  10
 
 GroupCX

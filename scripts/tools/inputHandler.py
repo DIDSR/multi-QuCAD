@@ -40,13 +40,6 @@ startTime = pandas.to_datetime ('2020-01-01 00:00') # Simulation Start time
 #configFile = '../scripts/config_resday4.dat'
 configTitles = numpy.array (['Clinical setting', 'Group and disease parameters',
                              'CADt AI diagnostic performance', 'Simulation setting'])
-# Disease hierarchy can also include diseases not seen by AI.
-#disease_hierarchy = ['A', 'B', 'C', 'D']
-# Vendor hierarchy assumes that no two AIs have the same priority under hierarchical queuing.
-#vendor_hierarchy = ['Vendor1', 'Vendor2', 'Vendor3', 'Vendor4']
-
-num_trials = 10 # number of simulation trials. The default value is set to 1 in config files.
-write_timelogs = False # save time logs for each queueing discipline separately. Only for the last trial.
 
 ################################
 ## Define lambdas
@@ -819,7 +812,7 @@ def get_muNonEm (prob_pos_neg, mus):
 
 def get_hier ():
 
-    
+
 
 
     hier_classes_dict = {}
