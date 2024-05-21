@@ -35,9 +35,17 @@
 ## ----------
 ## * Add in properties for multi-AI scenario
 ##
+## 07/24/2023 by Rucha
+## ----------
+## * hierarchical queuing (multi-disease, multi-AI, independent disease
+##   groups scenario).
+## * Major updates in simulate_queue, read_newest_urgent_patient, and
+##   radiologist_do_work.
 ##
-## Updated by Rucha (07/24/2023) Updated for hierarchical queuing (multi-disease, multi-AI, independent disease groups scenario).
-## Major updates in simulate_queue, read_newest_urgent_patient, radiologist_do_work.
+## 05/21/2024
+## ----------
+## * Clean up for non-preemptive queue 
+## * 
 ###########################################################################
 
 ################################
@@ -46,7 +54,7 @@
 import numpy, pandas, queue, logging, argparse
 from copy import deepcopy
 
-import patient, radiologist
+from . import patient, radiologist
 
 ################################
 ## Define constants
@@ -1596,15 +1604,7 @@ class simulator (object):
                                                                                    self._future_patients[qtype])            
                 # Check if any interruption due to the new arrival.
                 # If a doctor is interrupted, read the latest (high priority) 
-                parser = argparse.ArgumentParser(description="Description of your program")
-                parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
-                parser.add_argument("--priorityType", dest='priority_type', choices=['NP', 'P'], help='Specify the priority type (NP or P)', required=True)
-                args = parser.parse_args()
-                configFile = args.config_file
-                priorityType = args.priority_type
-    
-                if priorityType == 'P':
-                    self._read_newest_urgent_patient (qtype, apatient)
+                self._read_newest_urgent_patient (qtype, apatient)
         
             # +-------------------------------
             # | New customer *will* arrive

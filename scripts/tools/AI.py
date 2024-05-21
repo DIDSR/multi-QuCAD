@@ -35,7 +35,7 @@ import matplotlib.gridspec as gridspec
 import warnings
 warnings.filterwarnings("ignore")
 
-import patient
+from . import patient
 
 ############################################
 ## Functions related to normal distribution

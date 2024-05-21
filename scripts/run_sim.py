@@ -25,7 +25,7 @@
 import numpy, pickle, time, os, sys, cProfile, io, pstats, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator, plotter, hier
+from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator #, hier
 
 #import logging
 #logging.basicConfig(level=logging.DEBUG)
@@ -51,10 +51,12 @@ def create_disease_tree (diseaseGroups, meanServiceTimes, AIs):
         ------
         diseaseGroups (dict): group information from config file
             e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
-                'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+                  'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
         meanServiceTimes (dict): radiologists' service time by groups and diseases
-            e.g. {'GroupCT':{'A':10, 'non-diseased':7},
-                'GroupUS':{'F':6, 'non-diseased':7}}
+                                 e.g. {'GroupCT':{'A':10, 'non-diseased':7},
+                                       'GroupUS':{'F':6, 'non-diseased':7}}
+        AIs (dict): directary of all AIs involved in the queue
+                    e.g. {AIname: an AI object}
         
         outputs
         -------
@@ -173,11 +175,12 @@ def print_sim_performance (oneSim, AIs, params):
 ################################ 
 if __name__ == '__main__':
 
-    verbose = True
     parser = argparse.ArgumentParser(description="Description of your program")
     parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
+    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
     configFile = args.config_file
+    verbose = args.verbose
 
     ## Gather user-specified settings
     params = inputHandler.read_args(configFile, verbose)
@@ -270,8 +273,8 @@ if __name__ == '__main__':
         pickle.dump (data, f)
     f.close()
 
-    for AIname, AIinfo in params['AIinfo'].items():
-        trialGen.waiting_times_df.to_csv(f'{AIinfo['FPFThresh']}_{AIinfo['TPFThresh']}.csv')
+    #for AIname, AIinfo in params['AIinfo'].items():
+    #    trialGen.waiting_times_df.to_csv(f'{AIinfo['FPFThresh']}_{AIinfo['TPFThresh']}.csv')
     
     if params['doRunTime']:
         pr.disable()

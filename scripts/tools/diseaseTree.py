@@ -19,6 +19,13 @@
 ################################
 class disease (object):
     
+    ''' An object to encapsulate properties of a disease condition
+        * its name
+        * which group does it belong to
+        * disease prevalence within the group
+        * radiologist mean reading time when reading a diseased case
+    '''
+
     def __init__ (self):
         
         self._diseaseName = None
@@ -27,7 +34,7 @@ class disease (object):
         self._meanReadTime = None
 
     def __str__ (self):
-        summary = '| * {0}:\n'.format (self.diseaseName)
+        summary =  '| * {0}:\n'.format (self.diseaseName)
         summary += '|    - Belong to: {0}\n'.format (self.groupBelong)
         summary += '|    - Probability: {0}\n'.format (self.diseaseProb)        
         summary += '|    - Mean reading time: {0} min\n'.format (self.meanReadTime)
@@ -63,6 +70,14 @@ class disease (object):
     
 class diseaseGroup (object):
 
+    ''' An object to encapsulate properties of all disease conditions
+        that belong to the same group
+        * the group name
+        * fraction of patients (w.r.t. all patients) that belong to this group
+        * an array of all disease conditions within the group
+        * an array of AIs that analyze images within this group
+    '''
+
     def __init__ (self):
         
         self._groupName = None
@@ -78,35 +93,48 @@ class diseaseGroup (object):
         return summary
     
     @property
-    def groupName (self):
-        return self._groupName
+    def groupName (self): return self._groupName
     @groupName.setter
-    def groupName (self, groupName):
-        self._groupName = groupName
+    def groupName (self, groupName): self._groupName = groupName
     
     @property
-    def groupProb (self):
-        return self._groupProb
+    def groupProb (self): return self._groupProb
     @groupProb.setter
     def groupProb (self, groupProb):
         self._groupProb = round (groupProb, 6)    
     
     @property
-    def AIs (self):
-        return self._AIs
+    def AIs (self): return self._AIs
     
     @property
-    def diseases (self):
-        return self._diseases
+    def diseases (self): return self._diseases
 
     def check_diseaseProbs (self):
-        
+
+        ''' Function to check if all disease prob (including non-diseased)
+            adds up to 1.
+        '''
+
+
         probs = [aDisease.diseaseProb for aDisease in self._diseases]   
         if not round (sum (probs), 5) == 1:
             raise IOError ('Disease probability in {0} do not add up.'.format (self.groupName))        
     
     def add_nondisease (self, nonDiseaseMeanReadTime):
-        
+
+        ''' Public function to add a non-disease into the array. Non-diseased
+            cases are considered a "disease" object for coding purposes. Its
+            "disease" name is always non-diseased, and its disease prevalence
+            is 1 minus the diseaseProb of all diseases in this group. Therefore,
+            this function should always be called at the end after defining all
+            disease conditions in the group.
+
+            input
+            -----
+            nonDiseaseMeanReadTime (float): radiologist mean reading time in minutes
+                                            to read a non-diseased case in this group.
+        '''
+
         aDisease = disease()
         aDisease.diseaseName = 'non-diseased'
         aDisease.diseaseProb = 1 - sum ([aDisease.diseaseProb for aDisease in self._diseases]) 
@@ -117,6 +145,18 @@ class diseaseGroup (object):
     
     def add_disease (self, diseaseName, diseaseProb, meanReadTime):
         
+        ''' Public function to add a disease condition into the array. Each
+            disease condition is defined by its name, disease prevalence
+            within the group, and radiologist reading time.
+
+            input
+            -----
+            diseaseName (str): name of the disease condition
+            diseaseProb (float): disease prevalence within the group
+            meanReadTime (float): radiologist mean reading time in minutes
+                                  to read a diseased case.
+        '''
+
         aDisease = disease()
         aDisease.diseaseName = diseaseName
         aDisease.diseaseProb = diseaseProb
@@ -126,6 +166,16 @@ class diseaseGroup (object):
         self._diseases.append (aDisease)
 
     def add_AI (self, anAI):
+
+        ''' Public function to add an AI into the array i.e. these AI(s)
+            analyze all images within this group.
+
+            input
+            -----
+            anAI: list of AI object or one AI object that will be
+                  appended to the AI list for this group.
+        '''
+
         if isinstance (anAI, list):
             self._AIs.extend (anAI)
         else:
@@ -133,6 +183,10 @@ class diseaseGroup (object):
 
 class diseaseTree (object):
     
+    ''' A diseaseTree object that encapsulates all the groups of diseases
+        defined by the users.
+    '''
+
     def __init__ (self):       
         self._diseaseGroups = []
 
@@ -145,13 +199,20 @@ class diseaseTree (object):
         return summary        
         
     @property
-    def diseaseGroups (self):
-        return self._diseaseGroups
+    def diseaseGroups (self): return self._diseaseGroups
 
     def get_groupNames (self):
+
+        ''' Quick public function to get the names of all groups
+        '''
+
         return [aGroup.groupName for aGroup in self.diseaseGroups]
         
     def check_groupProbs (self):
+
+        ''' Check if all group probability adds up to 1.
+        '''
+
         ## Check group and disease probabilities
         groupProbs = []
         for aGroup in self.diseaseGroups:
@@ -163,7 +224,27 @@ class diseaseTree (object):
     
     def add_aDiseaseGroup (self, diseaseGroupName, diseaseGroupProb,
                            diseaseNames, diseaseProbs, meanReadTimes, AIs=[]):
-        
+
+        ''' Public function to add a disease group that may have multiple
+            disease conditions. Note that diseaseNames, diseaseProbs, and
+            meanReadTimes are in the same order as the cooresponding disease
+            conditions. For example,
+            diseaseNames  = [ 'A', 'B',  'C']
+            diseaseProbs  = [0.05, 0.1, 0.07]
+            meanReadTimes = [  10, 7.5, 13.8] 
+            i.e. Disease A has a probability of 0.05 within this group and 
+                 mean reading time for A is 10 minutes.
+
+            inputs
+            ------
+            diseaseGroupName (str): group name
+            diseaseGroupProb (float): fraction that a patient belongs to this group
+            diseaseNames (array str): array of disease names
+            diseaseProbs (array float): array of disease prevalence within the group
+            meanReadTimes (array float): radiologists' reading time in minutes 
+            AIs (array AI): array of the AI objects that read every image in this group
+        '''
+
         aGroup = diseaseGroup()
         aGroup.groupName = diseaseGroupName
         aGroup.groupProb = diseaseGroupProb
@@ -184,9 +265,23 @@ class diseaseTree (object):
         
     def build_diseaseTree (self, diseaseDict, meanServiceTimes, AIs):
         
+        ''' Public function to build the entire disease tree. 
+
+            inputs
+            ------
+            diseaseDict (dict): group information from config file
+                e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
+                      'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+            meanServiceTimes (dict): radiologists' service time by groups and diseases
+                                     e.g. {'GroupCT':{'A':10, 'non-diseased':7},
+                                           'GroupUS':{'F':6, 'non-diseased':7}}
+            AIs (dict): directary of all AIs involved in the queue
+                        e.g. {AIname: an AI object}
+        '''
+
         for groupname, aGroup in diseaseDict.items():
             ## Identify all the AIs in this group
-            AIsInGroup = [anAI for subID, anAI in AIs.items() if anAI.groupName==groupname]
+            AIsInGroup = [anAI for _, anAI in AIs.items() if anAI.groupName==groupname]
             ## Add a new disease group
             self.add_aDiseaseGroup (groupname, aGroup['groupProb'],
                                     aGroup['diseaseNames'],
@@ -197,6 +292,12 @@ class diseaseTree (object):
         self.check_groupProbs()
     
     def get_diseased_prevalence (self):
+
+        ''' Quick public function to get the overall disease prevalence
+            (considering all disease conditions) with respect to all
+            patients. 
+        '''
+
         ## Diseased prevalence = # diseased / # total
         ## Essentially, it is sum (groupProb * diseaseProb)
         prevalence = 0
@@ -211,6 +312,10 @@ class diseaseTree (object):
         return prevalence
     
     def get_nondiseased_prevalence (self):
+
+        ''' Quick public function to get the non-diseased prevalence
+        '''
+
         return 1 - self.get_diseased_prevalence()
         
         

@@ -134,10 +134,10 @@ def check_user_inputs (params):
         print ('WARN: Theoretical values for AI negative and diseased/non-diseased subgroups will not be available.')
 
     ## Checks if file/folders exists
-    for location in ['statsFile', 'runtimeFile', 'plotPath']:
+    for location in ['statsFile', 'runTimeFile', 'plotPath']:
         if params[location] is not None:
             if not os.path.exists (os.path.dirname (params[location])):
-                print ('ERROR: Path does not exist: {0}'.format (params[location]))
+                print ('ERROR: Path does not exist: {0}'.format (os.path.dirname (params[location])))
                 try:
                     print ('ERROR: Trying to create the folder ...')
                     os.mkdir (os.path.dirname (params[location]))
@@ -179,7 +179,7 @@ def read_args (configFile, verbose):
     ## Add a few flags 
     params['doPlots'] = params['plotPath'] is not None
     if params['verbose']: print ('| doPlots: {0}'.format (params['doPlots']))
-    params['doRunTime'] = params['runtimeFile'] is not None
+    params['doRunTime'] = params['runTimeFile'] is not None
     if params['verbose']: print ('| doRunTime: {0}'.format (params['doRunTime']))
 
     if params['verbose']:
@@ -193,10 +193,17 @@ def extract_clinical_simulation_settings (content):
 
     ''' Function to extract clinical and simulation settings. The returned variable must
         should contain the following keys and their values:
-                    * 'traffic', 'fractionED', 'nRadiologists',
-                    * 'meanServiceTimeInterruptingMin', 'nTrials',
-                    * 'nPatientsTarget', 'doTrialOnly', 'statsFile',
-                    * 'runTimeFile', 'plotPath'
+                    * 'isPreemptive'
+                    * 'traffic'
+                    * 'fractionED'
+                    * 'nRadiologists'
+                    * 'meanServiceTimeInterruptingMin'
+                    * 'nTrials'
+                    * 'nPatientsTarget'
+                    * 'verbose'
+                    * 'statsFile'
+                    * 'runTimeFile'
+                    * 'plotPath'
         
         inputs 
         ------
@@ -220,7 +227,7 @@ def extract_clinical_simulation_settings (content):
         if key in ['nRadiologists', 'nTrials', 'nPatientsTarget']:
             inputs[key] = int (value)
         # These keys should be boolean
-        if key in ['doTrialOnly']:
+        if key in ['isPreemptive']:
             if not inputs[key] in ['True', 'False']:
                 raise IOError ('ERROR: {0} must be either True or False.'.format (key))
             inputs[key] = eval (value)

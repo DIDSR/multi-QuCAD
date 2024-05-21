@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 import warnings
 warnings.filterwarnings("ignore")
 
-import calculator
+from . import calculator
 import numpy as np
 import pandas as pd
 

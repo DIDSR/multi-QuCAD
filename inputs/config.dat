@@ -129,8 +129,6 @@ rocFile       None
 nTrials         10                           # Number of trials to perform
 nPatientsTarget 1000                         # Number of targeted patient images
 verbose         True                         # False to turn off all printouts
-doTrialOnly     False                        # If False, also run 1 simulation run for debugging 
-                                             # Otherwise (esp for job submission), put it to False
 statsFile       ../outputs/stats/stats.p     # Pickled file with the parameters and simulation results
 runTimeFile     ../outputs/stats/runTime.txt # Text file showing runtime performance
                                              # If None, do not output the runtime performance

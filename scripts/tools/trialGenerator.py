@@ -13,8 +13,8 @@
 ## Import packages
 ################################ 
 import pandas, numpy, logging
-import simulator
-from tools import hier
+from . import simulator
+from . import hier
 
 ################################
 ## Define constants
