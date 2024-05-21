@@ -25,7 +25,7 @@
 import numpy, pickle, time, os, sys, cProfile, io, pstats, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator #, hier
+from tools import inputHandler, simulator, trialGenerator
 
 #import logging
 #logging.basicConfig(level=logging.DEBUG)
@@ -40,73 +40,6 @@ get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_
 ################################
 ## Define functions
 ################################ 
-def create_disease_tree (diseaseGroups, meanServiceTimes, AIs):
-
-    ''' Function to create a disease tree instance that encapsulate all
-        the group/disease information including group probability, disease
-        prevalence, mean reading times, which AI associate to which group
-        and disease, and their operating thresholds. 
-
-        inputs
-        ------
-        diseaseGroups (dict): group information from config file
-            e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
-                  'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
-        meanServiceTimes (dict): radiologists' service time by groups and diseases
-                                 e.g. {'GroupCT':{'A':10, 'non-diseased':7},
-                                       'GroupUS':{'F':6, 'non-diseased':7}}
-        AIs (dict): directary of all AIs involved in the queue
-                    e.g. {AIname: an AI object}
-        
-        outputs
-        -------
-        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
-                                    all group/disease/AI/reading time info.
-        
-    '''
-
-    ## AIs should be already updated with user-set threshold 
-    aDiseaseTree = diseaseTree.diseaseTree ()
-    aDiseaseTree.build_diseaseTree (diseaseGroups, meanServiceTimes, AIs)
-
-    return aDiseaseTree
-
-def create_AI (AIname, AIinfo, doPlots=False, plotPath=None):
-
-    ''' Function to create a CADt device either at a threshold or from 
-        an input ROC file. If provided an ROC File, the file should have
-        two columns. First is false positive fraction (FPF), and second
-        is true positive fraction (TPF). Note that either FPFThresh or
-        rocFile should be provided. If both are provided, use FPFThresh
-        and ignore ROC file.
-
-        inputs
-        ------
-        TPFThresh (float): CADt Se operating point to be used for simulation
-        FPFThresh (float): CADt 1-Sp operating point to be used for simulation
-        rocFile (str): File to ROC curve that will be parameterized
-        doPlot (bool): If true, generate plots for ROC parameterization 
-        plotPath (str): Path where plots generated will live
-
-        output
-        ------
-        anAI (AI): CADt with a diagnostic performance from user input
-    '''
-
-    ## When FPF is provided, use a single operating point
-    if AIinfo['FPFThresh'] is not None:
-        return AI.AI.build_from_opThresh(AIname, AIinfo['groupName'], AIinfo['targetDisease'],
-                                         AIinfo['TPFThresh'], 1-AIinfo['FPFThresh'])
-
-    ## If FPF is not provided, but emperical ROC is provided, parameterize
-    ## the ROC curve based on bi-normal distribution.
-    anAI = AI.AI.build_from_empiricalROC (AIname, AIinfo['groupName'], AIinfo['targetDisease'],
-                                          AIinfo['rocFile'], AIinfo['TPFThresh'])
-    anAI.fit_ROC (doPlots=doPlots, outPath=plotPath)
-    ## Make sure the CADt operates at the user-input Se Threshold 
-    anAI.SeThresh = AIinfo['TPFThresh']
-    return anAI
-
 def print_sim_performance (oneSim, AIs, params):
 
     ## Check with group prob and disease prevalence
@@ -177,41 +110,26 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Description of your program")
     parser.add_argument("--configFile", dest='config_file', help="Path to the configuration file")
-    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
     configFile = args.config_file
-    verbose = args.verbose
 
     ## Gather user-specified settings
-    params = inputHandler.read_args(configFile, verbose)
+    params = inputHandler.read_args(configFile)
 
     pr = None
     if params['doRunTime']:
         pr = cProfile.Profile()
         pr.enable()
-
-    ## Create an AI object
-    AIs = {AIname:create_AI (AIname, AIinfo, doPlots=params['doPlots'], plotPath=params['plotPath'])
-           for AIname, AIinfo in params['AIinfo'].items()}
-    
-    ## Create a disease tree
-    aDiseaseTree = create_disease_tree (params['diseaseGroups'],
-                                        params['meanServiceTimes'], AIs)
     
     ## Add additional params
-    params = inputHandler.add_params (AIs, params, aDiseaseTree)
+    params, AIs, aDiseaseTree = inputHandler.add_params (params)
 
     ## Check AI performance
     oneSim = simulator.simulator ()
     oneSim.set_params (params)
     oneSim.track_log = False
-    oneSim.simulate_queue (AIs, aDiseaseTree, hier_classes_dict)
+    oneSim.simulate_queue (AIs, aDiseaseTree)
     print_sim_performance (oneSim, AIs, params)
-    params['n_patients_per_class'] = {qtype:{aclass:get_n_interrupting_patients (oneSim, qtype) if aclass=='interrupting' else \
-                                                    get_n_positive_patients  (oneSim, qtype) if aclass=='positive' else \
-                                                    get_n_negative_patients  (oneSim, qtype)
-                                             for aclass in ['interrupting', 'positive', 'negative']}
-                                      for qtype in params['qtypes'][1:]}
     
     ## If do-plots, generate 1 trial to plot case diagram and histograms
     #if params['doPlots']:

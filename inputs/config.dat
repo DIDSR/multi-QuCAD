@@ -64,13 +64,12 @@ meanServiceTimeNonDiseasedMin  10
 
 GroupUS
 groupProb                      0.25
-disease                        B   3   0.4   10
+disease                        B   2   0.4   10
 meanServiceTimeNonDiseasedMin  10
 
 GroupMR
 groupProb                      0.25
-disease                        C   2   0.4   10
-disease                        E   5   0.1   10
+disease                        C   3   0.4   10
 meanServiceTimeNonDiseasedMin  10
 
 GroupCX

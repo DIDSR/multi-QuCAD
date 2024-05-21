@@ -14,6 +14,11 @@ import numpy
 ################################
 ## Define constants
 ################################
+## Priority = 1  -> interrupting
+## Priority = 2  -> AI-positive in non-hierarchical queue
+## Priority = 3+ -> AI-positive in hierarchical queue
+## Priority = 99 -> AI-negative
+start_priority = 3
 
 ################################
 ## Define hierarchy
@@ -29,6 +34,7 @@ class hierarchy (object):
         self._diseaseNames = None
         self._groupNames = None
         self._AINames = None
+        self._hierDict = {}
 
     @property
     def diseaseNames (self): return self._diseaseNames
@@ -38,6 +44,9 @@ class hierarchy (object):
 
     @property
     def AINames (self): return self._AINames
+
+    @property
+    def hierDict (self): return self._hierDict
 
     def build_hierarchy (self, diseaseDict, AIinfo):
 
@@ -51,16 +60,21 @@ class hierarchy (object):
                                  'diseaseRanks':[1], 'diseaseProbs':[0.3]},
                       'GroupUS':{'groupProb':0.6, 'diseaseNames':['F', 'E'],
                                  'diseaseRanks':[3, 2], 'diseaseProbs':[0.6, 0.1]}}
+            AIinfo (dict): parameters and their values by each AI
+                        e.g. {'Vendor1':{'groupName':'GroupCT', 'targetDisease':'A',
+                                            'TPFThresh':0.95, 'FPFThresh':0.15, 'rocFile':None}}
         '''
 
         order, diseaseNames, groupNames, AINames = [], [], [], []
 
         for groupname, aGroup in diseaseDict.items():
-
             order.extend(aGroup['diseaseRanks'])
             diseaseNames.extend(aGroup['diseaseNames'])
-            groupNames.extend(groupname)
+
             for diseaseName in aGroup['diseaseNames']:
+
+                groupNames.append(groupname)
+
                 thisAI = [ainame for ainame, aiinfo in AIinfo.items() if aiinfo['targetDisease']==diseaseName]
                 aiName = None if len (thisAI) == 0 else thisAI[0]
                 AINames.append(aiName)
@@ -73,3 +87,7 @@ class hierarchy (object):
         self._diseaseNames = diseaseNames[order]       
         self._groupNames = groupNames[order]
         self._AINames = AINames[order]
+
+        ## Build a hierarchy class dictionary
+        self._hierDict = {ainame : order + start_priority
+                          for ainame, order in zip (self._AINames, order)}

@@ -20,8 +20,9 @@
 import numpy, pandas, os, argparse, sys
 from copy import deepcopy
 
-#sys.path.insert(0, os.getcwd()+'\\tools')
+sys.path.insert(0, os.getcwd()+'\\tools')
 #from calculator import get_theory_waitTime
+from . import diseaseTree, AI, hierarchy
 
 ################################
 ## Define constants
@@ -137,24 +138,23 @@ def check_user_inputs (params):
                 except:
                     raise IOError ('Cannot create the folder.\nPlease provide a valid {0} path.'.format (location))
 
-def read_args (configFile, verbose): 
+def read_args (configFile): 
 
     ''' Function to read user inputs. Adding doPlot and doRunTime based on whether
         user provides the paths.
+
+        input
+        -----
+        configFile (str): path to the config file
 
         output
         ------
         params (dict): dictionary capsulating all user inputs
     '''
 
-    # parser = argparse.ArgumentParser(description='Read user input setting params.')
-    # parser.add_argument('--configFile', type=str, default=None, help='User input configuration data file with all parameters')
-    # parser.add_argument('--verbose', action='store_true', default=False, help='Print out simulation progress')
-    # args = parser.parse_args()
-    
     ## Put everything in a dictionary
-    params = {'verbose':verbose, 'configFile':configFile, 
-              'qtypes':qtypes, 'nPatientsPads':nPatientsPads, 'startTime':startTime}
+    params = {'configFile':configFile, 'qtypes':qtypes,
+              'nPatientsPads':nPatientsPads, 'startTime':startTime}
     params.update (read_configFile (configFile))
 
     if params['verbose']:
@@ -220,7 +220,7 @@ def extract_clinical_simulation_settings (content):
         if key in ['nRadiologists', 'nTrials', 'nPatientsTarget']:
             inputs[key] = int (value)
         # These keys should be boolean
-        if key in ['isPreemptive']:
+        if key in ['isPreemptive', 'verbose']:
             if not inputs[key] in ['True', 'False']:
                 raise IOError ('ERROR: {0} must be either True or False.'.format (key))
             inputs[key] = eval (value)
@@ -810,17 +810,94 @@ def get_muNonEm (prob_pos_neg, mus):
     # Inverse to get the effective service rate
     return 1/meanReadingTime
 
-def get_hier ():
+def create_disease_tree (diseaseGroups, meanServiceTimes, AIs):
 
+    ''' Function to create a disease tree instance that encapsulate all
+        the group/disease information including group probability, disease
+        prevalence, mean reading times, which AI associate to which group
+        and disease, and their operating thresholds. 
 
+        inputs
+        ------
+        diseaseGroups (dict): group information from config file
+            e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'], 'diseaseProbs':[0.3]},
+                  'GroupUS':{'groupProb':0.6, 'diseaseNames':['F'], 'diseaseProbs':[0.6]}}
+        meanServiceTimes (dict): radiologists' service time by groups and diseases
+                                 e.g. {'GroupCT':{'A':10, 'non-diseased':7},
+                                       'GroupUS':{'F':6, 'non-diseased':7}}
+        AIs (dict): directary of all AIs involved in the queue
+                    e.g. {AIname: an AI object}
+        
+        outputs
+        -------
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
+        
+    '''
 
+    ## AIs should be already updated with user-set threshold 
+    aDiseaseTree = diseaseTree.diseaseTree ()
+    aDiseaseTree.build_diseaseTree (diseaseGroups, meanServiceTimes, AIs)
 
-    hier_classes_dict = {}
-    for ii, vendor_name in enumerate(hier.vendor_hierarchy):
-    # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
-        hier_classes_dict.update({vendor_name : {'groupName': hier.AI_group_hierarchy[ii], 'disease_num':ii+3}})
+    return aDiseaseTree
 
-def add_params (AIs, params, aDiseaseTree):
+def create_AI (AIname, AIinfo, doPlots=False, plotPath=None):
+
+    ''' Function to create a CADt device either at a threshold or from 
+        an input ROC file. If provided an ROC File, the file should have
+        two columns. First is false positive fraction (FPF), and second
+        is true positive fraction (TPF). Note that either FPFThresh or
+        rocFile should be provided. If both are provided, use FPFThresh
+        and ignore ROC file.
+
+        inputs
+        ------
+        TPFThresh (float): CADt Se operating point to be used for simulation
+        FPFThresh (float): CADt 1-Sp operating point to be used for simulation
+        rocFile (str): File to ROC curve that will be parameterized
+        doPlot (bool): If true, generate plots for ROC parameterization 
+        plotPath (str): Path where plots generated will live
+
+        output
+        ------
+        anAI (AI): CADt with a diagnostic performance from user input
+    '''
+
+    ## When FPF is provided, use a single operating point
+    if AIinfo['FPFThresh'] is not None:
+        return AI.AI.build_from_opThresh(AIname, AIinfo['groupName'], AIinfo['targetDisease'],
+                                         AIinfo['TPFThresh'], 1-AIinfo['FPFThresh'])
+
+    ## If FPF is not provided, but emperical ROC is provided, parameterize
+    ## the ROC curve based on bi-normal distribution.
+    anAI = AI.AI.build_from_empiricalROC (AIname, AIinfo['groupName'], AIinfo['targetDisease'],
+                                          AIinfo['rocFile'], AIinfo['TPFThresh'])
+    anAI.fit_ROC (doPlots=doPlots, outPath=plotPath)
+    ## Make sure the CADt operates at the user-input Se Threshold 
+    anAI.SeThresh = AIinfo['TPFThresh']
+    return anAI
+
+def create_hierarchy (diseaseDict, AIinfo):
+
+    ''' Function to create a hierarchy of disease conditions.
+
+        inputs
+        ------
+        diseaseDict (dict): group information from config file
+            e.g. {'GroupCT':{'groupProb':0.4, 'diseaseNames':['A'],
+                             'diseaseRanks':[1], 'diseaseProbs':[0.3]},
+                  'GroupUS':{'groupProb':0.6, 'diseaseNames':['F', 'E'],
+                             'diseaseRanks':[3, 2], 'diseaseProbs':[0.6, 0.1]}}
+        AIinfo (dict): parameters and their values by each AI
+                    e.g. {'Vendor1':{'groupName':'GroupCT', 'targetDisease':'A',
+                                     'TPFThresh':0.95, 'FPFThresh':0.15, 'rocFile':None}}
+    '''
+
+    aHierarchy = hierarchy.hierarchy()
+    aHierarchy.build_hierarchy (diseaseDict, AIinfo)
+    return aHierarchy
+
+def add_params (params):
 
     ''' Function to add additional parameters from user inputs. This includes
         probabilities that the next patient belongs to a certain priority class,
@@ -838,6 +915,16 @@ def add_params (AIs, params, aDiseaseTree):
         params (dict): dictionary capsulating all simulation parameters
                        and analytical time-savings.
     '''
+
+    ## Create an array of AI objects, a disease tree, and a hierarchy
+    AIs = {AIname:create_AI (AIname, AIinfo, doPlots=params['doPlots'], plotPath=params['plotPath'])
+           for AIname, AIinfo in params['AIinfo'].items()}
+    
+    aDiseaseTree = create_disease_tree (params['diseaseGroups'],
+                                        params['meanServiceTimes'], AIs)
+    
+    aHierarchy = create_hierarchy (params['diseaseGroups'], params['AIinfo'])
+    params['hierDict'] = aHierarchy.hierDict
 
     ## Probabilities
     params['SeThreshs'] = {AIname:anAI.SeThresh for AIname, anAI in AIs.items()}
@@ -886,6 +973,8 @@ def add_params (AIs, params, aDiseaseTree):
     params['rhos'] = {key: params['lambdas'][key]/params['mus'][key]/params['nRadiologists']
                       for key in params['lambdas'].keys()}
 
+    
+
     ## Get theoretical waiting time and delta time (i.e. wait-time-saving)
     #  Need more time to figure out how to theoretically predict wait-time in multi-AI/disease scenario
     #params['theory'] = {}
@@ -896,7 +985,4 @@ def add_params (AIs, params, aDiseaseTree):
     #              'waitTimeWithCADt' if variable == 'preresume' else 'waitTimeSaving'
     #        params['theory'][aclass][key] = get_theory_waitTime (aclass, variable, params)    
 
-    return params
-
-
-
+    return params, AIs, aDiseaseTree

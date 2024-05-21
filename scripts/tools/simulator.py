@@ -74,7 +74,7 @@ queuetypes = ['fifo', 'preresume', 'hierarchical']
 ## Names of priority classes in with CADt scenario. Positive
 ## and negative patients will be lumped into one priority
 ## class in the without-CADt scenario.
-priorityClasses = ['interrupting', 'positive', 'negative']
+priorityClasses = {'interrupting':1, 'positive':2, 'negative':99}
 
 ## Simulation default parameters
 ##  1. number of days during simulation. Default: 1 month
@@ -118,9 +118,9 @@ class simulator (object):
         self._palmers = None # with CADt preresume
         self._harmonys = None # with CADt hierarchical
         ##  2. Names of priority classes and queue types
-        self._classes = priorityClasses # changed RD
-        # self._classes = None
+        self._classes = priorityClasses.keys() # changed RD
         self._qtypes = queuetypes 
+        self._hierDict = None
         ##  3. Queue holder for all scenarios
         self._aqueue = None
         ##  4. Patient holder for all patients 
@@ -255,6 +255,13 @@ class simulator (object):
         if not isinstance (serviceTimes, dict):
             raise IOError ('Input serviceTimes must be a dictionary.')
         self._serviceTimes = serviceTimes
+    @property
+    def hierDict (self): return self._hierDict
+    @hierDict.setter
+    def hierDict (self, hierDict):
+        if not isinstance (hierDict, dict):
+            raise IOError ('Input hierDict must be a dictionary.')        
+        self._hierDict = hierDict    
     @property
     def nRadiologists (self): return self._nRadiologists
     @nRadiologists.setter
@@ -1464,6 +1471,51 @@ class simulator (object):
             dataframes[subgroup] = pandas.DataFrame.from_dict (adict, orient='index').transpose()
         self._n_patient_queue_dataframe = dataframes
 
+    def _get_priority_class (self, apatient):
+        
+        ''' Priority ranking in the with-CADt world:
+                1 if emergent patient
+                2 if AI positive 
+                99 if AI negative
+            
+            input
+            -----
+            apatient (patient): new patient instance
+
+            output
+            ------
+            priority_class (int): priority rank (1, 2, or 99) in a
+                                  non-hierarchical queue
+        '''
+        
+        if apatient.is_interrupting: return self.classes['interrupting']
+        if apatient.is_positive: return self.classes['positive']
+        return self.classes['negative']
+
+    def _get_hier_class (self, apatient, is_positives=None):
+        
+        ''' Hierarchical ranking in the with-CADt world + hierarchical classes:
+                1 if emergent patient
+                3 onwards for each unique disease
+                99 if AI negative
+
+            input
+            -----
+            apatient (patient): new patient instance
+
+            output
+            ------
+            hier_class (int): priority rank (3 onwards) in a hierarchical queue            
+        '''
+        
+        if apatient.is_interrupting: return self.classes['interrupting']
+        ## All AI-negative are assigned to the lowest class i.e. 99
+        if not apatient.is_positive: return self.classes['negative']
+        
+        # For all AIs that flagged the patient positive, get the corresponding
+        # disease number. Return the smallest number (highest priority) from this list. 
+        return min ([self.hierDict[ainame] for ainame in is_positives.keys()])
+
     def _AI_is_positive (self, apatient, groups_with_AI, aDiseaseTree):
         
         ''' Collect all AI labels by individual AIs (if reviewed) and the
@@ -1482,14 +1534,19 @@ class simulator (object):
                                  {'GroupName':Is-positive Boolean}
             is_positive (bool): Overall positive if this case is flagged by
                                 any one of the AIs involved
+            priority_class (int): priority rank (1, 2, or 99) in a
+                                  non-hierarchical queue
+            hier_class (int): priority rank (3 onwards) in a hierarchical queue
         '''
 
         # is_positive remains None if interrupting - doesn't go through any AIs
-        if apatient.is_interrupting: return None, None
+        if apatient.is_interrupting:
+            return None, None, self.classes['interrupting'], self.classes['interrupting']
         
         # if the group this patient belongs to doesn't have an AI,
         # its in the negative priority class.
-        if not apatient.group_name in groups_with_AI: return None, False
+        if not apatient.group_name in groups_with_AI:
+            return None, False, self.classes['negative'], self.classes['negative']
         
         # loop through each AI
         is_positives = {}
@@ -1505,7 +1562,11 @@ class simulator (object):
                  
         # This patient is positive if any of the AI gives positive
         is_positive = numpy.array (list (is_positives.values())).any()
-        return is_positives, is_positive
+        # priority classes
+        prior_class = self._get_priority_class (apatient)
+        hier_class = self._get_hier_class (apatient, is_positives)
+
+        return is_positives, is_positive, prior_class, hier_class
 
     ## +--------------------------------------------------------------
     ## | Public functions to set parameters and start simulation
@@ -1551,7 +1612,7 @@ class simulator (object):
             params (dict): simulation parameters. It must have the following keys:
                             startTime, timeWindowDays, prevalence, fractionED,
                             meanArrivalTime, meanServiceTimes, nRadiologist, and
-                            nPatientsPads
+                            nPatientsPads, and hierarchy dictionary
         '''
         
         self.startTime = params['startTime']
@@ -1563,8 +1624,9 @@ class simulator (object):
         self.nRadiologists = params['nRadiologists']
         self.nPatientPadsStart = params['nPatientsPads'][0]
         self.nPatientPadsEnd = params['nPatientsPads'][1]
+        self.hierDict = params['hierDict']
 
-    def simulate_queue (self, AIs, aDiseaseTree, dict_hierarchies):
+    def simulate_queue (self, AIs, aDiseaseTree):
         
         ''' Public function to perform a single trial of simulation.
         
@@ -1580,7 +1642,6 @@ class simulator (object):
 
         ## Extract the groups that have AIs to review their images
         groups_with_AI = numpy.unique ([anAI.groupName for _, anAI in AIs.items()])
-        print(groups_with_AI)
 
         ## Simulation starts! Each timestamp is when a new patient arrives.
         apatient = None
@@ -1612,7 +1673,9 @@ class simulator (object):
             apatient = patient.patient (patient_counter, self._diseaseGroups, self._fractionED,
                                         self.arrivalRate, newArrivalTime, dict_hierarchies)
             #  Decide the AI call and service duration by the first Fiona (FIFO)
-            apatient.is_positives, apatient.is_positive = self._AI_is_positive (apatient, groups_with_AI, aDiseaseTree)
+            is_positives, is_positive, prior_class, hier_class = self._AI_is_positive (apatient, groups_with_AI, aDiseaseTree)
+            apatient.is_positives, apatient.is_positive = is_positives, is_positive
+            apatient.priority_class, apatient.hierarchy_class = prior_class, hier_class
             apatient.service_duration = self._fionas[0].determine_service_duration(disease_name=apatient.disease_name,
                                                                                    group_name=apatient.group_name,
                                                                                    is_interrupting=apatient.is_interrupting)
