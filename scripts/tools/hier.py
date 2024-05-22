@@ -327,57 +327,88 @@ def service_time_duration(open_times, close_times):
 
 
 ###############################################################################################
-# revised function for computing non-preemptive theory for different groups, should work regardless of AI performance
-
-
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
     means_alone = []
     var_alone = []
     neg_means = []
     neg_vars = []
-    means = []
-    var = []
-    gprobs = []
+    pos_means = []
+    pos_vars = []
+    prob_pos_groups = []
     arrival_rates = []
     wait_times = []
-    FNprobs = []
-    TNprobs = []
-    #below code assumes that each disease has an AI, will generalize later.
+    Ses = []
+    Sps = []
+    gp_probs = []
+    prob_thisdis_given_negs = []
+    probdis_givenpos_array = []
+    probnondis_givenpos_array = []
+    probdis_givenneg_array = []
+    probnondis_givenneg_array = []
+    wait_times_dnd = []
+
+    #below code assumes that each disease has an AI.
     for i in range(len(AI_group_hierarchy)):
         groupname = AI_group_hierarchy[i]
         diseasename = diseases_with_AI[i]
         vendor = vendor_hierarchy[i]
-        servicerate = params['meanServiceTimes'][groupname][diseasename]
-        probtruedis = params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
-        probnondis = (1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0])/(params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))
-        means_alone.append(servicerate)
-        var_alone.append(2*servicerate**2)
-        neg_service = params['meanServiceTimes'][AI_group_hierarchy[i]]['non-diseased']
-        print('neg_service', neg_service)
-        neg_var = 2*neg_service**2
-        neg_means.append(neg_service)
-        neg_vars.append(2*neg_service**2)
-        means.append(servicerate*probtruedis+neg_service*probnondis)
-        var.append((2*servicerate**2)*probtruedis+neg_var*probnondis)
-        gprob = (params['SeThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]+(1-params['SpThreshs'][vendor])*(1-params['diseaseGroups'][groupname]['diseaseProbs'][0]))*params['diseaseGroups'][groupname]['groupProb']
-        gprobs.append(gprob)
-        arrival_rate = gprob*params['arrivalRates']['non-interrupting']
+        Se = params['SeThreshs'][vendor]
+        Ses.append(Se)
+        Sp = params['SpThreshs'][vendor]
+        Sps.append(Sp)
+        dis_prob = params['diseaseGroups'][groupname]['diseaseProbs'][0]
+        gp_prob = params['diseaseGroups'][groupname]['groupProb']
+        gp_probs.append(gp_prob)
+
+        dis_servicerate = params['meanServiceTimes'][groupname][diseasename]
+        nondis_servicerate = params['meanServiceTimes'][AI_group_hierarchy[i]]['non-diseased']
+        dis_var = 2 * dis_servicerate**2
+        nondis_var = 2 * nondis_servicerate**2
+
+        probdis_givenpos = Se * dis_prob / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
+        probnondis_givenpos = (1 - Sp) * (1 - dis_prob) / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
+        probdis_givenneg = (1 - Se) * dis_prob / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
+        probnondis_givenneg = Sp * (1 - dis_prob) / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
+        probdis_givenpos_array.append(gp_prob * probdis_givenpos)
+        probnondis_givenpos_array.append(gp_prob * probnondis_givenpos)
+        probdis_givenneg_array.append(gp_prob * probnondis_givenneg)
+        probnondis_givenneg_array.append(gp_prob * probnondis_givenneg)
+
+        pos_means.append(dis_servicerate * probdis_givenpos + nondis_servicerate * probnondis_givenpos) #* changed
+        pos_vars.append(dis_var * probdis_givenpos + nondis_var * probnondis_givenpos)
+        neg_means.append(dis_servicerate * probdis_givenneg + nondis_servicerate * probnondis_givenneg)
+        neg_vars.append(dis_var * probdis_givenneg + nondis_var * probnondis_givenneg)
+
+        prob_pos_group = (Se * dis_prob + (1 - Sp) * (1 - dis_prob)) * gp_prob
+        prob_pos_groups.append(prob_pos_group)
+        arrival_rate = prob_pos_group * params['arrivalRates']['non-interrupting']
         arrival_rates.append(arrival_rate)
-        FNprobs.append((1-params['SeThreshs'][vendor])*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
-        TNprobs.append(params['SpThreshs'][vendor]*params['diseaseGroups'][groupname]['diseaseProbs'][0]*params['diseaseGroups'][groupname]['groupProb'])
-    sum_gprobs = sum(gprobs)
-    sum_TNprobs = sum(TNprobs)
-    sum_FNprobs = sum(FNprobs)
-    means.append((sum(np.array(FNprobs)*np.array(means_alone))+sum(np.array(TNprobs)*np.array(neg_means)))/(sum_TNprobs+sum_FNprobs))
-    var.append((sum(np.array(FNprobs)*np.array(var_alone))+sum(np.array(TNprobs)*np.array(neg_vars)))/(sum_TNprobs+sum_FNprobs))
-    arrival_rates.append((1-sum_gprobs)*params['arrivalRates']['non-interrupting'])
-    wo = sum(np.array(arrival_rates)*np.array(var))
-    for i in range(len(var)):
+        prob_thisdis_given_neg = gp_prob * (Sp * (1 - dis_prob) + (1 - Se) * dis_prob)
+        prob_thisdis_given_negs.append(prob_thisdis_given_neg)
+
+    #AI negative groups
+    prob_AI_neg = 1 - sum(prob_pos_groups)
+    prob_thisdis_given_negs = np.array(prob_thisdis_given_negs) / prob_AI_neg
+    AI_neg_mean = sum(np.array(prob_thisdis_given_negs) * np.array(neg_means))
+    AI_neg_var = sum(np.array(prob_thisdis_given_negs) * np.array(neg_vars))
+    pos_means.append(AI_neg_mean)
+    pos_vars.append(AI_neg_var)
+    arrival_rates.append((1 - sum(np.array(prob_pos_groups))) * params['arrivalRates']['non-interrupting'])
+
+    #calculation
+    wo = sum(np.array(arrival_rates) * np.array(pos_vars))
+    for i in range(len(pos_vars)):
         if i == 0:
-            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
+            wait_times.append(wo / (2 * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(pos_means[:i+1])))))
         else:
-            wait_times.append(wo / (2*(1 - sum(np.array(arrival_rates[:i]) * np.array(means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(means[:i+1])))))
-    return wait_times[-1], wait_times[chosen_dis_idx]
+            wait_times.append(wo / (2 * (1 - sum(np.array(arrival_rates[:i]) * np.array(pos_means[:i]))) * (1 - sum(np.array(arrival_rates[:i+1]) * np.array(pos_means[:i+1])))))
+
+    ### wait_times now contains the average waiting time for a patient in AI+ A, AI+ B, AI+ C, ... and AI- groups.
+    ### the below code returns the average waiting time for a patient in diseased A, diseased B, diseased C, ... and non-diseased groups.
+
+    wait_times_dnd_pos = np.array(wait_times[:-1]) * np.array(Ses) + wait_times[-1] * (1 - np.array(Ses))
+    wait_time_neg = sum(np.array(wait_times[:-1]) * (1 - np.array(Sps)) * np.array(gp_probs) + wait_times[-1] * np.array(Sps) * np.array(gp_probs))
+    return wait_time_neg, wait_times_dnd_pos[chosen_dis_idx]
 
 
 ###########################################################################################################################
@@ -536,11 +567,11 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
         else:
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
-# Report wait-times for AI negative subgroup. (Optional.)
+# Report wait-times for non-diseased subgroup.
 all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
 
 for trial_idx in np.arange(0, num_trials):
-    filtered_df = df.loc[(df['is_positive'] == False) & (df['trial_num'] == trial_idx)]['hierarchical'].to_numpy()
+    filtered_df = df.loc[(df['is_diseased'] == False) & (df['trial_num'] == trial_idx)]['hierarchical'].to_numpy()
     trial_mean = np.mean(filtered_df); ci_95 = get_95_ci(filtered_df)
     all_trial_mean.append(trial_mean); all_trial_95lo.append(ci_95[0]); all_trial_95hi.append(ci_95[1])
 
