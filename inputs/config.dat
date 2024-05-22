@@ -135,8 +135,8 @@ rocFile       None
 ################################################
 ## Simulation setting
 ################################################
-nTrials         10                           # Number of trials to perform
-nPatientsTarget 10000                        # Number of targeted patient images
+nTrials         1                            # Number of trials to perform
+nPatientsTarget 20000                        # Number of targeted patient images
 verbose         True                         # False to turn off all printouts
 statsFile       ../outputs/stats/stats.p     # Pickled file with the parameters and simulation results
 runTimeFile     ../outputs/stats/runTime.txt # Text file showing runtime performance

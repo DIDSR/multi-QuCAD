@@ -1348,7 +1348,9 @@ class simulator (object):
         results += [apatient.assigned_service_time, apatient.group_name, apatient.disease_name]
 
         ## Patients who are not reviewed by any AIs do not have `is_positives`
-        results += [None if apatient.is_positives is None else bool (apatient.is_positives[ainame])
+        results += [None if apatient.is_positives is None else
+                    None if ainame not in apatient.is_positives else
+                    bool (apatient.is_positives[ainame])
                     for ainame in ainames]
 
         results += [apatient.wait_time_duration, apatient.trigger_time, apatient.open_times, apatient.close_times]
