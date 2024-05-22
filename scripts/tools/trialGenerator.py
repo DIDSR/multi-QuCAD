@@ -7,6 +7,10 @@
 ## reading flow. This script is used when you want the results from
 ## one single computer. If you have a cluster, you can run individual
 ## trials in parallel without using this script.
+##
+## 05/21/2024
+## ----------
+## * Add in
 ########################################################################
 
 ################################
@@ -92,12 +96,12 @@ class trialGenerator (object):
         self._timeWindowDays = timeWindowDays      # simulation duration in days
         self._nPatientsPadStart = nPatientsPads[0] # number of patients to be padded before counting results 
         self._nPatientsPadEnd = nPatientsPads[1]   # number of patients to be padded after counting results
+        self._hierDict = None                      # disease ranking in hierarchy queue
 
         self._fractionED = None                    # fraction of emergent patient in all patients
         self._arrivalRate = None                   # overall patient arrival rate regardless of subgroups 
         self._serviceTimes = None                  # mean reading time by interrupting, diseased, and non-diseased
         self._diseaseGroups = None                 # disease prevalences within each group
-        self._theory_ppv_npv = None
 
     ## +----------------------------------------
     ## | Class properties
@@ -175,11 +179,6 @@ class trialGenerator (object):
     def diseaseGroups (self, diseaseGroups):
         self._diseaseGroups = diseaseGroups
     @property
-    def theory_ppv_npv (self): return self._theory_ppv_npv
-    @theory_ppv_npv.setter
-    def theory_ppv_npv (self, theory_ppv_npv):
-        self._theory_ppv_npv = theory_ppv_npv
-    @property
     def fractionED (self): return self._fractionED
     @fractionED.setter
     def fractionED (self, fractionED):
@@ -203,6 +202,13 @@ class trialGenerator (object):
         if not isinstance (serviceTimes, dict):
             raise IOError ('Input serviceTimes must be a dictionary.')
         self._serviceTimes = serviceTimes
+    @property
+    def hierDict (self): return self._hierDict
+    @hierDict.setter
+    def hierDict (self, hierDict):
+        if not isinstance (hierDict, dict):
+            raise IOError ('Input hierDict must be a dictionary.')        
+        self._hierDict = hierDict
     @property
     def nRadiologists (self): return self._nRadiologists
     @nRadiologists.setter
@@ -244,6 +250,7 @@ class trialGenerator (object):
         sim.timeWindowDays = self._timeWindowDays
         sim.nPatientPadsEnd = self._nPatientPadsEnd
         sim.nPatientPadsStart = self._nPatientPadsStart
+        sim.hierDict = self._hierDict
         
         return sim
         
@@ -363,7 +370,6 @@ class trialGenerator (object):
     
         return stats       
     
-
     def _get_n_patients_stats (self, df):
 
         ''' Obtain statistics from number of patients as observed by each
@@ -529,21 +535,22 @@ class trialGenerator (object):
 
             inputs
             ------
-            params (dict): dictionary capsulating all simulation parameters 
+            params (dict): dictionary capsulating all simulation parameters
+            AIs (dict): dictionary of all AIs involved in the queue            
         '''
 
         self.nTrials = params['nTrials']
         self.startTime = params['startTime']
         self.timeWindowDays = params['timeWindowDays']
         self.doPlots = params['doPlots']
-        self.theory_ppv_npv = params['probs_ppv_npv']
         self.diseaseGroups = params['diseaseGroups']
         self.fractionED = params['fractionED']
         self.arrivalRate = 1/params['meanArrivalTime']
         self.serviceTimes = params['meanServiceTimes'] 
         self.nRadiologists = params['nRadiologists']
         self.nPatientPadsStart = params['nPatientsPads'][0]
-        self.nPatientPadsEnd = params['nPatientsPads'][1]        
+        self.nPatientPadsEnd = params['nPatientsPads'][1]
+        self.hierDict = params['hierDict']        
     
         ## Once we know the disease groups, we can initialize sim_performanace.
         self._sim_performance['group'] = {}
@@ -562,7 +569,9 @@ class trialGenerator (object):
 
             inputs
             ------
-            anAI (AI): CADt with a diagnostic performance from user input            
+            AIs (dict): dictionary of all AIs involved in the queue
+            aDiseaseTree (diseaseTree): a diseaseTree that have all group/disease
+                                        probabilities                     
         '''
 
         waitTimedfs = []

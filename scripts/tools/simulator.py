@@ -44,8 +44,7 @@
 ##
 ## 05/21/2024
 ## ----------
-## * Clean up for non-preemptive queue 
-## * 
+## * Clean up for hierarchical & non-preemptive queue  
 ###########################################################################
 
 ################################
@@ -96,8 +95,6 @@ startTime = pandas.to_datetime ('2020-01-01 00:00')
 ################################
 ## Define lambdas
 ################################ 
-
-extract_waitTime = lambda p: [p.wait_time_duration, p.is_interrupting, p.is_diseased, bool (p.is_positive), p._group_name, p._disease_name, p._assigned_serviceTime , p._trigger_time, p._open_times, p._close_times]
 remove_nan = lambda array: array[numpy.isfinite (array)].astype (bool)
 
 ################################
@@ -118,7 +115,7 @@ class simulator (object):
         self._palmers = None # with CADt preresume
         self._harmonys = None # with CADt hierarchical
         ##  2. Names of priority classes and queue types
-        self._classes = priorityClasses.keys() # changed RD
+        self._classes = priorityClasses # changed RD
         self._qtypes = queuetypes 
         self._hierDict = None
         ##  3. Queue holder for all scenarios
@@ -405,82 +402,6 @@ class simulator (object):
         
         return self._subgroup_records[qtype]['negative']
 
-    def get_TP_records (self, qtype):
-        
-        ''' Public function to obtain only true-positive patient
-            instances excluding padding patients from either
-            with or without CADt scenarios. 
-        
-            input
-            -----
-            qtype (str): either 'fifo' for without-CADt scenario
-                         or 'preresume' for with-CADt scenario
-            
-            output
-            ------
-            patients (list): patients from AI true-positive
-                             subgroups only
-        '''           
-        
-        return self._subgroup_records[qtype]['TP']
-
-    def get_FN_records (self, qtype):
-
-        ''' Public function to obtain only false-negative patient
-            instances excluding padding patients from either
-            with or without CADt scenarios. 
-        
-            input
-            -----
-            qtype (str): either 'fifo' for without-CADt scenario
-                         or 'preresume' for with-CADt scenario
-            
-            output
-            ------
-            patients (list): patients from AI false-negative
-                             subgroups only
-        '''               
-        
-        return self._subgroup_records[qtype]['FN']
- 
-    def get_TN_records (self, qtype):
-
-        ''' Public function to obtain only true-negative patient
-            instances excluding padding patients from either
-            with or without CADt scenarios. 
-        
-            input
-            -----
-            qtype (str): either 'fifo' for without-CADt scenario
-                         or 'preresume' for with-CADt scenario
-            
-            output
-            ------
-            patients (list): patients from AI true-negative
-                             subgroups only
-        '''               
-        
-        return self._subgroup_records[qtype]['TN']
- 
-    def get_FP_records (self, qtype):
-        
-        ''' Public function to obtain only false-positive patient
-            instances excluding padding patients from either
-            with or without CADt scenarios. 
-        
-            input
-            -----
-            qtype (str): either 'fifo' for without-CADt scenario
-                         or 'preresume' for with-CADt scenario
-            
-            output
-            ------
-            patients (list): patients from AI false-positive
-                             subgroups only
-        '''
-        
-        return self._subgroup_records[qtype]['FP']
-   
     def get_n_patients_in_system (self, gtype):
         
         ''' Public function to obtain a summary dataframe of the
@@ -581,7 +502,6 @@ class simulator (object):
         ## Set counters
         nClass1, nClass2, nAll = 0, 0, 0
         nDiseased, nNonDiseased = 0, 0
-        nTP, nTN, nFP, nFN = 0, 0, 0, 0
         nEmergency, nNonEmergency = 0, 0
         ## Separate variable to keep track of the patient class
         pclass = None
@@ -641,10 +561,8 @@ class simulator (object):
                     pclass = 2
                     if p.is_diseased:
                         nDiseased += 1
-                        nTP += 1
                     else:
                         nNonDiseased += 1
-                        nFP += 1
                 # Negative class has the lowest priority i.e. 3
                 elif p.priority_class == 99:
                     nNonEmergency += 1
@@ -652,10 +570,8 @@ class simulator (object):
                     pclass = 99
                     if p.is_diseased:
                         nDiseased += 1
-                        nFN += 1
                     else:
                         nNonDiseased += 1
-                        nTN += 1
                 # Copy this patient to the new queue. Prioritized based
                 # on patient's priority class, and then by its arrival
                 # time. The last entry is the patient instance.                    
@@ -663,8 +579,7 @@ class simulator (object):
         
             return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
                             'positive':nClass1, 'negative':nClass2,
-                            'diseased':nDiseased, 'non-diseased':nNonDiseased,
-                            'TP':nTP, 'TN':nTN, 'FP':nFP, 'FN':nFN}
+                            'diseased':nDiseased, 'non-diseased':nNonDiseased}
 
     def _count_nPatients (self, qtype, newArrivalTime):
         
@@ -858,7 +773,7 @@ class simulator (object):
                 ## Only show the patient id if doctor is currently being served 
                 if closeTimeSec > aTimeSec:
                     caseID = doctor.current_patient.caseID
-                    priority_class = doctor.current_patient.priority_class if qtype in ['fifo', 'preresume'] else doctor.current_patient.hier_class
+                    priority_class = doctor.current_patient.priority_class if qtype in ['fifo', 'preresume'] else doctor.current_patient.hierarchy_class
             summary += '* {0:8} ({1:10.1f}): {2:7}-{3}\n'.format (name, closeTimeSec, caseID, priority_class)
 
         ## Status of each patient in the queue: patient name and its
@@ -870,7 +785,7 @@ class simulator (object):
             if p.is_interrupting:
                 pclass = 1
             elif p.is_positive:
-                pclass = p.priority_class if qtype == 'preresume' else p.hier_class  
+                pclass = p.priority_class if qtype == 'preresume' else p.hierarchy_class  
             else:
                 pclass = 2 if qtype == 'fifo' else 99
             copied.put ((pclass, p.trigger_time, p))
@@ -1112,7 +1027,7 @@ class simulator (object):
                 # if qtype == 'hierarchical':
                 #     print('put in q:', p.caseID, p.trigger_time, p.disease_name, p.group_name, p.is_positive, '\n')
                 # Put this patient in the queue
-                pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hier_class
+                pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hierarchy_class
                 self._aqueue[qtype].put((pclass, p.trigger_time, p))
                 # Remove this patient from the list of future patient
                 future_patient.remove (p)
@@ -1186,9 +1101,9 @@ class simulator (object):
                 continue
             
             # Next doctor if this doctor is treating the same (high) priority class.
-            # Note: pclass takes apatient.hier_class values in case of hierarchical queues and apatient.priority_class values in case of preresume queues.
-            pclass = 1 if apatient.is_interrupting else 2 if qtype=='fifo' else apatient.priority_class if qtype=='preresume' else apatient.hier_class
-            doc_pclass = 1 if doctor.current_patient.is_interrupting else 2 if qtype=='fifo' else doctor.current_patient.priority_class if qtype=='preresume' else doctor.current_patient.hier_class
+            # Note: pclass takes apatient.hierarchy_class values in case of hierarchical queues and apatient.priority_class values in case of preresume queues.
+            pclass = 1 if apatient.is_interrupting else 2 if qtype=='fifo' else apatient.priority_class if qtype=='preresume' else apatient.hierarchy_class
+            doc_pclass = 1 if doctor.current_patient.is_interrupting else 2 if qtype=='fifo' else doctor.current_patient.priority_class if qtype=='preresume' else doctor.current_patient.hierarchy_class
             if doc_pclass <= pclass:
                 self._logger.debug ('| | This doctor is reading a higher-priority patient. (next doctor)')
                 continue
@@ -1202,7 +1117,7 @@ class simulator (object):
             
 
             # Interrupted patient is back in the queue.
-            pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hier_class
+            pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hierarchy_class
 
             self._aqueue[qtype].put ((pclass, p.trigger_time, p))
             # Remove this patients from the list of patient records
@@ -1331,7 +1246,7 @@ class simulator (object):
 
                     # Put this patient in the queue
                     self._logger.debug ('|   - putting patient {0} in queue.'.format (p.caseID))
-                    pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hier_class
+                    pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hierarchy_class
                     self._aqueue[qtype].put((pclass, p.trigger_time, p))
 
                     # if qtype == 'hierarchical':
@@ -1352,12 +1267,12 @@ class simulator (object):
         self._logger.debug ('+====================================================')
         self._logger.debug ('| ')
 
-    def _divide_subgroups (self): # Not updated for hierarchical queuing !!!
+    def _divide_subgroups (self): 
         
         ''' Divide patient records into subgroup. This function is meant to
             be called at the end after simulation is completed. If padding
             was requested, patient records are trimmed at the beginning 
-            and at the end.
+            and at the end. 'diseased' here refers to any disease conditions.
             
             output
             ------
@@ -1366,7 +1281,7 @@ class simulator (object):
                                      are grouped by subgroup: 'all',
                                      'interrupting', 'non-interrupting',
                                      'diseased', 'non-diseased', 'positive',
-                                     'negative', 'TP', 'FP', 'TN', 'FN'
+                                     'negative'
         '''
         
         ## Define holder for patient records
@@ -1378,7 +1293,6 @@ class simulator (object):
             interrupting, noninterrupting = [], []
             diseased, nondiseased = [], []
             positive, negative = [], []
-            TP, FP, TN, FN = [], [], [], []            
             # Trim patient records as requested
             trimmed_records = records[self.nPatientPadsStart:-self.nPatientPadsEnd]
             # Populate patient records individually to the corresponding subgroups
@@ -1390,52 +1304,85 @@ class simulator (object):
                     diseased.append (p)
                     if p.is_positive:
                         positive.append (p)
-                        TP.append (p)
                     else:
                         negative.append (p)
-                        FN.append (p)
                 else:
                     noninterrupting.append (p)
                     nondiseased.append (p)
                     if p.is_positive:
                         positive.append (p)
-                        FP.append (p)
                     else:
                         negative.append (p)
-                        TN.append (p)
             # Save to subgroup_records
             subgroup_records[qtype] = {'all':trimmed_records,
                                        'interrupting':interrupting, 'non-interrupting':noninterrupting,
                                        'diseased':diseased, 'non-diseased':nondiseased,
-                                       'positive':positive, 'negative':negative,
-                                       'TP':TP, 'FN':FN, 'TN':TN, 'FP':FP} 
+                                       'positive':positive, 'negative':negative} 
     
         return subgroup_records
 
-    def _collect_waiting_times (self): # new version that goes with the hierarchical queuing implementation.
+    def _extract_waitTime (self, apatient, ainames):
+
+        ''' Extract information per patient in a given queue type. Output array includes
+            (in the exact order):
+            * boolean  : is_interrupting
+            * boolean  : is_diseased
+            * boolean  : is_positive
+            * float    : service_time
+            * str      : group_name
+            * str      : disease_name
+            * boolean  : AI binary output (for each AI involved).
+                         None if patient not reviewed by any AI.
+            * float    : wait-time
+            * timestamp: case trigger timestamp
+            * list     : case opened by radiologist (may have multiple)
+            * list     : case closed by radiologist (may have multiple)
+
+            inputs
+            ------
+            apatient (patient): a patient instance            
+            ainame (list): names of all AIs involved
+
+            output
+            ------
+            results (list): info of this patient
+        '''
+
+        results  = [bool (apatient.is_interrupting), bool (apatient.is_diseased), bool (apatient.is_positive)]
+        results += [apatient.assigned_service_time, apatient.group_name, apatient.disease_name]
+
+        ## Patients who are not reviewed by any AIs do not have `is_positives`
+        results += [None if apatient.is_positives is None else bool (apatient.is_positives[ainame])
+                    for ainame in ainames]
+
+        results += [apatient.wait_time_duration, apatient.trigger_time, apatient.open_times, apatient.close_times]
+        return results
+
+    def _collect_waiting_times (self): 
     
         ''' Put all patient waiting times into a dataframe. This function
             is meant to be called at the end after simulation is completed.
             Each row in the dataframe is a patient, who may have different
-            waiting time in with and without CADt scenarios.
+            waiting time in with and without CADt scenarios. Updated to 
+            hierarchy queue by Rucha.
         '''
 
-        ## Basis is without-CADt scenario. Extract the waiting time per
-        ## patient in the without-CADt scenario. Put them into dataframe.
-        ## Besides the waiting time, the interrupting status, truth status,
-        ## and AI call are also extracted per patient.
-        adict = {r.caseID:extract_waitTime(r) for r in self._subgroup_records['fifo']['all']}
-        df = pandas.DataFrame.from_dict (adict, orient='index',
-                                         columns=['fifo', 'is_interrupting', 'is_diseased', 'is_positive', 'group_name', 'disease_name', 'service_time', 'fifo_trigger','fifo_open', 'fifo_close'])
+        ainames = [ainame for ainame in self.hierDict.keys() if ainame is not None]
+        columns = ['is_interrupting', 'is_diseased', 'is_positive', 'service_time', 'group_name', 'disease_name'] + ainames 
         
-        ## For other queue types, extract the same information and merge
-        ## the columns by patient ID.
+        ## Basis is without-CADt scenario. Extract the waiting time per patient in the without-CADt
+        ## scenario. Put them into dataframe. Besides the waiting time, the interrupting status,
+        ## truth status, and AI call are also extracted per patient.        
+        adict = {r.caseID:self._extract_waitTime(r, ainames) for r in self._subgroup_records['fifo']['all']}
+        df = pandas.DataFrame.from_dict (adict, orient='index', columns=columns+['fifo', 'fifo_trigger', 'fifo_open', 'fifo_close'])
+        
+        ## For other queue types, extract the same information and merge the columns by patient ID.
         for qtype in self._qtypes:
             if qtype == 'fifo': continue
-            adict = {r.caseID:extract_waitTime(r) for r in self._subgroup_records[qtype]['all']}
+            adict = {r.caseID:self._extract_waitTime(r, ainames) for r in self._subgroup_records[qtype]['all']}
             adf = pandas.DataFrame.from_dict (adict, orient='index',
-                                              columns=[qtype, 'is_interrupting', 'is_diseased', 'is_positive', 'group_name', 'disease_name', 'service_time', '%s_trigger'%(qtype), '%s_open'%(qtype), '%s_close'%(qtype)])
-            df = pandas.merge (df, adf.drop (axis=1, columns=['is_interrupting', 'is_diseased', 'is_positive', 'group_name', 'disease_name', 'service_time']),
+                                              columns=columns+[qtype, qtype+'_trigger', qtype+'_open', qtype+'_close'])
+            df = pandas.merge (df, adf.drop (axis=1, columns=columns),
                                right_index=True, left_index=True, how='inner')
 
         ## Store the data frame as a private variable
@@ -1597,7 +1544,7 @@ class simulator (object):
         self._completed_patients = {qtype:[] for qtype in self._qtypes}
 
         ## Set holders for simulation results
-        groups = ['all', 'non-interrupting', 'diseased', 'non-diseased', 'TP', 'TN', 'FP', 'FN'] + list (self._classes)
+        groups = ['all', 'interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']
         self._n_patients = {qtype:{group:{'total':[], 'queue':[]} for group in groups} for qtype in self._qtypes}
         self._waiting_time_dataframe = None  
         self._n_patient_total_dataframe = None
@@ -1637,7 +1584,7 @@ class simulator (object):
                                         probabilities            
         '''
 
-        ## Reset parameters        
+        ## Reset parameters
         self.reset()
 
         ## Extract the groups that have AIs to review their images
@@ -1672,7 +1619,7 @@ class simulator (object):
             # +-------------------------------
             apatient = patient.patient (patient_counter, self._diseaseGroups, self._fractionED,
                                         self.arrivalRate, newArrivalTime)
-            #  Decide the AI call and service duration by the first Fiona (FIFO)
+            #  Decide the AI call and service duration by the first Fiona (without CADt)
             is_positives, is_positive, prior_class, hier_class = self._AI_is_positive (apatient, groups_with_AI, aDiseaseTree)
             apatient.is_positives, apatient.is_positive = is_positives, is_positive
             apatient.priority_class, apatient.hierarchy_class = prior_class, hier_class
@@ -1691,7 +1638,6 @@ class simulator (object):
             # | Update for next patient
             # +-------------------------------
             newArrivalTime = apatient.trigger_time
-            # print('generated-patient at:', apatient.caseID, apatient.trigger_time, apatient.disease_name, apatient.group_name, apatient.is_positive, '\n')
             patient_counter += 1
         
         ## Sort records

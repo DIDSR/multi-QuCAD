@@ -89,13 +89,14 @@ def print_sim_performance (oneSim, AIs, params):
         print ('|    * PPV (theory, sim): {0:.4f}, {1:.4f}'.format (params['probs_ppv_npv']['ppv'][groupName][AIname], ppv_sim))
         print ('|    * NPV (theory, sim): {0:.4f}, {1:.4f}'.format (params['probs_ppv_npv']['npv'][groupName][AIname], npv_sim))
         
-    print ('+-----------------------------------------------')
+    print ('+-----------------------------------------------\n')
     
+    ## Quick report of time difference per disease subgroup (including non-disease):
     #from hier.py
-    print('hr: ', hier.df_hr_mean, hier.df_95_ci_hr)
-    print('pr: ', hier.df_pr_mean, hier.df_95_ci_pr)
-    print('fifo: ', hier.df_fifo_mean, hier.df_95_ci_fifo)
-    print('theory: ', hier.df_theory)
+    #print('hr: ', hier.df_hr_mean, hier.df_95_ci_hr)
+    #print('pr: ', hier.df_pr_mean, hier.df_95_ci_pr)
+    #print('fifo: ', hier.df_fifo_mean, hier.df_95_ci_fifo)
+    #print('theory: ', hier.df_theory)
 
 ################################
 ## Script starts here!
@@ -122,13 +123,6 @@ if __name__ == '__main__':
     oneSim.track_log = False
     oneSim.simulate_queue (AIs, aDiseaseTree)
     print_sim_performance (oneSim, AIs, params)
-    
-    ## If do-plots, generate 1 trial to plot case diagram and histograms
-    #if params['doPlots']:
-    #    # Plot case diagram
-    #    for qtype in params['qtypes']:
-    #        outFile = plotPath + 'patient_timings_' + qtype + '.pdf'
-    #        plotter.plot_timing (outFile, oneSim.all_records, params['startTime'], n=200, qtype=qtype)
 
     ## Run trials
     t0 = time.time()
@@ -139,36 +133,6 @@ if __name__ == '__main__':
     params['runTimeMin'] = (time.time() - t0)/60 # minutes
     print ('{0} trials took {1:.2f} minutes'.format (params['nTrials'], params['runTimeMin']))
 
-    # Plot waiting time histograms (will come back to plot)
-    # if params['doPlots']:
-    #     print("plot_paths")
-    #     # Plot n patients histograms
-    #     # 1. using all patients from all trials
-    #     ext = 'allstats_default_test.pdf'
-    #     plotter.plot_n_patient_distributions (params['plotPath'], ext, trialGen.n_patients_system_df,
-    #                                           trialGen.n_patients_system_stats, params, oneTrial=False,
-    #                                           include_theory=True)
-    #     # 2. using all patients from one trial (show mean of means from all trials)
-    #     ext = 'trialstats_default_test.pdf'
-    #     plotter.plot_n_patient_distributions (params['plotPath'], ext, trialGen.n_patients_system_df,
-    #                                           trialGen.n_patients_system_stats_from_trials,
-    #                                           params, oneTrial=True, include_theory=True)
-        
-        # Plot waiting time histograms
-        # # 1. using all patients from one trial (show mean of means from all trials)
-        # ext = 'trialstats_default_sorted_minDrTime_em0.005_p0.30_r0.80_2.pdf'
-        # df = trialGen.waiting_times_df[trialGen.waiting_times_df.trial_id=='trial_000']
-        # df = df.drop(axis=1, columns=['trial_id', 'patient_id'])
-        # plotter.plot_waiting_time_distributions (params['plotPath'], ext, df, trialGen.waiting_times_stats_from_trials,
-        #                                          params, doDiff=False)
-        # plotter.plot_waiting_time_distributions (params['plotPath'], ext, df, trialGen.waiting_times_stats_from_trials,
-        #                                          params, doDiff=True)
-        # # 2. using all patients from all trials
-        # ext = 'allstats_default_sorted_minDrTime_em0.005_p0.30_r0.80_2.pdf'
-        # df = trialGen.waiting_times_df.drop(axis=1, columns=['trial_id', 'patient_id'])
-        # plotter.plot_waiting_time_distributions (params['plotPath'], ext, df, trialGen.waiting_times_stats, params, doDiff=False)
-        # plotter.plot_waiting_time_distributions (params['plotPath'], ext, df, trialGen.waiting_times_stats, params, doDiff=True)
-        
     ## Gather data for dict
     data = {'params':params,
             'lpatients':trialGen.n_patients_system_df,

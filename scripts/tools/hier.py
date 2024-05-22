@@ -290,30 +290,38 @@ params, aDiseaseTree, AIs = get_all_params(configFile)
 #disease_hierarchy = [item for sublist in [params['diseaseGroups'][jj]['diseaseNames']
 #                                          for jj in list(params['diseaseGroups'].keys())]
 #                    for item in sublist]
-order = [agroup['diseaseRanks'][0] for _, agroup in params['diseaseGroups'].items()]
+#hier = hierarchy.hierarchy()
+#hier.build_hierarchy (params['diseaseGroups'], params['AIinfo'])
+#disease_hierarchy = hier.diseaseNames
 
+#vendor_hierarchy =  list(params['AIinfo'].keys())
+## Now based on disease rank provided by user
+# vendor_hierarchy = hier.AINames ## could be None if no AI for that disease condition
 
-vendor_hierarchy =  list(params['AIinfo'].keys())
 #print('vendor_hierarchy', vendor_hierarchy)
-num_trials = inputHandler.num_trials
-write_timelogs = inputHandler.write_timelogs
+#num_trials = inputHandler.num_trials
+#write_timelogs = inputHandler.write_timelogs
 
 # Compute other matched inputs. 
-diseases_with_AI = [params['AIinfo'][ii]['targetDisease'] for ii in vendor_hierarchy]
-AI_group_hierarchy = [params['AIinfo'][ii]['groupName'] for ii in vendor_hierarchy]
+#diseases_with_AI = [params['AIinfo'][ii]['targetDisease'] for ii in vendor_hierarchy]
+#  aDiseaseTree.diseaseRanked
+#AI_group_hierarchy = [params['AIinfo'][ii]['groupName'] for ii in vendor_hierarchy]
+# 
 
-matched_group_hierarchy = []
-
-for disease in disease_hierarchy:
-    for jj in list(params['diseaseGroups'].keys()):
-        if disease in params['diseaseGroups'][jj]['diseaseNames']:
-            matched_group_hierarchy.append(jj) 
+#matched_group_hierarchy = []
+#for disease in disease_hierarchy:
+#    for jj in list(params['diseaseGroups'].keys()):
+#        if disease in params['diseaseGroups'][jj]['diseaseNames']:
+#            matched_group_hierarchy.append(jj) 
+#This is now...
+#matched_group_hierarchy = hier.groupNames
 
 # The following dictionary is an input to the patient class, which has been updated .
 hier_classes_dict = {}
 for ii, vendor_name in enumerate(vendor_hierarchy):
     # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
-    hier_classes_dict.update({vendor_name : {'groupName': AI_group_hierarchy[ii], 'disease_num':ii+3}})
+    hier_classes_dict.update({vendor_name : {'groupName': AI_group_hierarchy[ii],
+                                             'disease_num':ii+3}})
 
 # Run trials with all original parameters: simulation of hierarchical queues with no equivalent AIs, 
 # pre-resume (equal priority) and fifo queueing.

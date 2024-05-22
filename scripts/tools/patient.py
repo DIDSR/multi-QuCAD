@@ -44,8 +44,7 @@ minutes_to_microsec = lambda minute: round (minute * 60 * 10**3 * 10**3)
 ################################
 class patient (object):
     
-    def __init__ (self, index, diseaseGroups, fractionED, arrivalRate, last_patient_time,
-                  hierarchyDict):
+    def __init__ (self, index, diseaseGroups, fractionED, arrivalRate, last_patient_time):
         
         ''' A patient needs several inputs to determine the interrupting status, disease
             (truth) status (if applicable), and arrival time. Emergency status is a
@@ -71,8 +70,6 @@ class patient (object):
                                  in the unit of 1/minute (i.e. number of patient
                                  arrival / time period)
             last_patient_time (pandas.datetime): Arrival time of previous patient 
-            hierarchyDict (dict): hierarchy ranking of AIs. Always start from 3.
-                                  {'Vendor1':3, 'Vendor2':4, 'Vendor3':5}
         '''
         
         # A unique ID in string for this patient
@@ -296,27 +293,6 @@ class patient (object):
     @hierarchy_class.setter
     def hierarchy_class (self, hierarchy_class):
         self._hierarchy_class = hierarchy_class
-
-    @property
-    def hier_class (self):
-        
-        ''' Hierarchical ranking in the with-CADt world + hierarchical classes:
-                1 if emergent patient
-                3 onwards for each unique disease
-                99 if AI negative
-            In the without-CADt world, AI positive and negative have the
-            same priority rank (in simulator.py).
-        '''
-        
-        if self.is_interrupting: return priority_classes['interrupting']
-        ## All AI-negative are assigned to the lowest class i.e. 99
-        if not self.is_positive: return priority_classes['negative']
-        
-        # For all AIs that flagged the patient positive, get the corresponding
-        # disease number. Return the smallest number (highest priority) from this list. 
-        #all_flagged_pclasses = [hier_classes_dict[ii]['disease_num']
-        #                        for ii in self._is_positives.keys()]
-        return min ([self._hier_dict[ainame] for ainame in self._is_positives.keys()])
 
     def _get_interarrival_time (self):
         
