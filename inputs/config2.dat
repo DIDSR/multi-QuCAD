@@ -1,0 +1,123 @@
+##
+## By Elim Thompson 3/10/2023
+##
+## This is an example data file that can be fed to `run_sim.py` as an alternative
+## to command line arguments. This file can be parsed to `run_sim.py` via
+## `--configFile` flag.
+## 
+## 05/20/2024
+## ----------
+## * adding new parameters for multi-QuCAD 
+####################################################################################
+
+################################################
+## Clinical setting
+################################################
+isPreemptive                   True # True if preemptive priority i.e. radiologist is
+                                    # interrupted immediately upon arrival of a higher
+                                    # priority case. False if non-preemptive priority
+                                    # i.e. radiologist finishes the lower-priority case
+                                    # first before reading the new-coming higher priority case
+traffic                        0.8  # Hospital busyness:
+                                    # Between 0.0 (very quiet) and 0.95 (very congested)
+fractionED                     0.0  # Fraction of interrupting patients:
+                                    # Between 0.0 (no interrupting images) and 1.0 (all
+                                    # images are interrupting)
+nRadiologists                  1    # Number of radiologists reading during the time window:
+                                    # At least 1
+meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in minutes]
+                                    # for interrupting cases
+
+################################################
+## Group and disease parameters
+################################################
+##
+## Each block represents an image group. A group consists of images all of which are the
+## intended population of an AI (if there is an AI for that image type) or all of which
+## will not be analyzed by any AIs.
+##
+## Each block has 4 lines:
+## Line 1: Group name (provided by the user)
+## Line 2: Percentage of patients that belong to this group with respect to number of
+##         patients in the queue. This line must start with "groupProb" followed by a
+##         value (between 0 and 1) provided by the user. All groupProb from all groups
+##         must add up to 1.
+## Line 3: Information about the disease involved in this group. This line must start
+##         with "disease" followed by 4 inputs provided by the user. First is the disease
+##         name, and second is the hierarchical ranking for the hierarchy queue scenario.
+##         Third is the disease prevalence *within the group*, and forth is the
+##         radiologist's mean reading time for diseased cases in minutes. If there are
+##         more than 1 disease in the same group, all disease prevalence *within the group*
+##         must add up to 1.
+## Line 4: Radiologist's mean reading time for non-diseased cases in minutes. This line
+##         must start with "meanServiceTimeNonDiseasedMin" followed by a value provided
+##         by the user.
+##
+## Note that group names (Line 1) and disease names (Line 3) corresponds to the CADt AI
+## in the next section.
+##
+
+GroupCTA
+groupProb                      0.3
+disease                        A   1   0.1   10
+disease                        B   2   0.07  10
+meanServiceTimeNonDiseasedMin  10
+
+GroupCX
+groupProb                      0.7
+disease                        C   3   0.15  10
+meanServiceTimeNonDiseasedMin  10
+
+################################################
+## CADt AI diagnostic performance
+################################################
+##
+## Each block includes information of 1 AI. For a CADt device that identifies multiple conditions, it should
+## be broken down into 2 AIs each for one condition.
+##
+## Each block has 6 lines:
+## Line 1: AI name (provided by the user)
+## Line 2: The name of the group in which this AI will analyze all the images. This line must start with
+##         "groupName" followed by the group name (defined above) provided by the user.
+## Line 3: The disease within this group that the AI is trained to identify. This line must start with
+##         "targetDisease" followed by the disease name (defined above) provided by the user.
+## Line 4: True-positive fraction (TPF) of operating point of the AI i.e. sensitivity. This line must
+##         start with "TPFThresh" followed by a value (between 0 and 1) provided by the user.
+## Line 5: False-positive fraction (FPF) of operating point of the AI i.e. 1-specificity. This line must
+##         start with "FPFThresh" followed by a value (between 0 and 1) provided by the user. If using
+##         an input ROC curve, set this to `None` (not recommended).
+## Line 6: Path to a text file with an imperical ROC curve (e.g. `../inputs/exampleROC.dat`). This line
+##         must start with "rocFile" followed by the path provided by the user. In this file, the first
+##         column is the false-positive fraction (x-axis in the ROC curve), and the second column is the
+##         true-positive fraction (y-axis in the ROC curve). A bi-normal distribution is assumed to
+##         parametrize the imperical ROC curve. The FPFThresh of the AI operating point will be based on
+##         the TPFThresh (i.e. find the x-value of the ROC curve given the y-value). If using a user-
+##         specified TPFThresh, set this to `None` (recommended).
+##
+
+Vendor1
+groupName     GroupCTA
+targetDisease A
+TPFThresh     0.9       
+FPFThresh     0.3       
+rocFile       None 
+
+Vendor2
+groupName     GroupCTA
+targetDisease B
+TPFThresh     0.8  
+FPFThresh     0.1  
+rocFile       None 
+
+################################################
+## Simulation setting
+################################################
+nTrials         10                           # Number of trials to perform
+nPatientsTarget 20000                        # Number of targeted patient images
+verbose         True                         # False to turn off all printouts
+statsFile       ../outputs/stats/stats.p     # Pickled file with the parameters and simulation results
+runTimeFile     ../outputs/stats/runTime.txt # Text file showing runtime performance
+                                             # If None, do not output the runtime performance
+plotPath        ../outputs/plots/            # Folder where all output plots are stored
+                                             # If None, no plots are generated
+

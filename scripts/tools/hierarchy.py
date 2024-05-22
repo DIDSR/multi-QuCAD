@@ -38,13 +38,10 @@ class hierarchy (object):
 
     @property
     def diseaseNames (self): return self._diseaseNames
-
     @property
     def groupNames (self): return self._groupNames
-
     @property
     def AINames (self): return self._AINames
-
     @property
     def hierDict (self): return self._hierDict
 

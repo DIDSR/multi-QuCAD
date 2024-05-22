@@ -14,6 +14,7 @@ warnings.filterwarnings("ignore")
 from . import calculator
 import numpy as np
 import pandas as pd
+from copy import deepcopy
 
 ymin = 1e-5
 day_to_second = 60 * 60 * 24
@@ -183,6 +184,109 @@ def get_all_params(config_file_in, keep_ai='all', create_EQgrps = False):
     # ## Add additional params
     params_out = inputHandler.add_params (AIs_out, params_out, aDiseaseTree_out)
     return params_out, aDiseaseTree_out, AIs_out
+
+def get_new_params_elim(new_params): # do only if equivalent AIs and disease probs are needed for >1 AI/disease
+    
+    '''Compute and return params after creating equivalent AIs from multiple AIs. 
+    Equivalent Se, Sp and disease group probabilities are computed.
+    Other parameters may be updated just for consistency in access to params[variables].'''
+    
+    new_diseaseGroups = {}
+    new_meanServiceTimes = {}
+    
+    # Get groups with and without AI. 
+    #groups_wAI = [new_params['AIinfo'][ii]['groupName'] for ii in new_params['AIinfo'].keys()] # Groups with AI
+    groups_wAI = [aiinfo['groupName'] for _, aiinfo in new_params['AIinfo'].items()]
+    groups_noAI = list(set(new_params['diseaseGroups'].keys()) - set(groups_wAI)) # Groups with no AI
+    
+    # Compute equivalent group prob after combining all unique groups with AI.
+    #unique_gp_probs = [new_params['diseaseGroups'][ii]['groupProb'] for ii in list(set(groups_wAI))]
+    unique_gp_probs = [gpinfo['groupProb'] for gpname, gpinfo in new_params['diseaseGroups'].items() if gpname in groups_wAI]
+    gpEQ_prob = sum (unique_gp_probs) #np.sum(np.array(unique_gp_probs))
+
+    disEQ_prob, combined_dis_probs = 0, 0
+    
+    # 1. Create an equivalent AI. Assumption: Diseases seen by AIs are uncorrelated!!!
+    # 2. Create an equivalent group & the corresponding diseased probability. 
+#     Assumption: All diseases in a gp are uncorrelated.
+    all_se, all_sp, all_pop_prevalence = [], [], []
+
+    for vendor in new_params['AIinfo'].keys():
+
+        all_se.append(new_params['AIinfo'][vendor]['TPFThresh'])
+        all_sp.append(1 - new_params['AIinfo'][vendor]['FPFThresh'])
+
+        dis = new_params['AIinfo'][vendor]['targetDisease']
+        gp = new_params['AIinfo'][vendor]['groupName']
+        # Find disease index in the list of all diseases in a gp.
+        dis_idx =  list(params['diseaseGroups'].keys()).index(gp)
+        # Compute disease prevalence in population
+        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
+        all_pop_prevalence.append(pop_prev)
+
+    all_se = np.array(all_se)
+    all_sp = np.array(all_sp)
+    all_pop_prevalence = np.array(all_pop_prevalence)
+
+    EQSe, EQSp = get_eqvt_se_sp(all_se, all_sp, all_pop_prevalence)
+    new_params['AIinfo'] = {'Vendor0': {'groupName': 'GroupEQ', 'targetDisease': 'Z', 'TPFThresh': EQSe, 'FPFThresh': 1-EQSp, 'rocFile': None}}
+    
+    disEQ_prob = np.sum(all_pop_prevalence) / gpEQ_prob # prob of diseased patients in the EQ group. Diseases are assumed to be uncorrelated, hence probs are summed.
+    new_diseaseGroups.update({'GroupEQ': {'diseaseNames': ['Z'], 'diseaseProbs': [disEQ_prob], 'groupProb': gpEQ_prob}})
+
+    if groups_noAI:
+        for gp in groups_noAI:
+            new_diseaseGroups.update({key: new_params['diseaseGroups'][key] for key in new_params['diseaseGroups'] if key == gp})
+
+    new_params['diseaseGroups'] = new_diseaseGroups
+    
+    # 3. Update the corresponding mean service times.
+    # Set the default service time for diseased & non-diseased = the non-diseased reading time in the first group with AI
+    # This will change if mu_d != mu_nd.
+    for ii in new_params['diseaseGroups'].keys():
+        new_meanServiceTimes.update({key: new_params['meanServiceTimes'][key] for key in new_params['meanServiceTimes'] if key == ii})
+    
+    defaultServiceTime = new_params['meanServiceTimes'][groups_wAI[0]]['non-diseased'] 
+
+    new_meanServiceTimes.update({'interrupting':new_params['meanServiceTimes']['interrupting']})
+    new_meanServiceTimes.update({'GroupEQ':{'Z': defaultServiceTime, 'non-diseased': defaultServiceTime}})
+    new_params['meanServiceTimes'] = new_meanServiceTimes
+    
+    return new_params
+
+
+def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
+    '''1. Get params from the config file OR
+    2. get params after combining multiple AIs (keep_ai is the list of AIs to be combined) OR
+    3. get params for a single AI/ disease for use in theoretical calculations.'''
+    params_out = deepcopy (paramsOri) #inputHandler.read_args(config_file_in, False)
+    
+    if keep_ai is not 'all':
+        num_ais = len(keep_ai)
+        new_AIinfo = {} 
+        for this_ai in keep_ai:
+            new_AIinfo.update({key: params_out['AIinfo'][key] for key in params_out['AIinfo'] if key == this_ai}) 
+        params_out['AIinfo'] = new_AIinfo
+    
+    # For theory, this function may be called to create equivalent groups, either by combining AIs
+    # or as a dummy case with a single AI
+    if create_EQgrps and num_ais > 1: 
+        params_out = get_new_params(params_out)
+    elif create_EQgrps and num_ais == 1:
+        params_out = update_disease_names(params_out)
+        
+    # Create an AI object
+    AIs_out = {AIname:create_AI (AIname, AIinfo, doPlots=params_out['doPlots'], plotPath=params_out['plotPath'])
+           for AIname, AIinfo in params_out['AIinfo'].items()}
+    ## Create a disease tree
+    aDiseaseTree_out = create_disease_tree (params_out['diseaseGroups'],
+                                        params_out['meanServiceTimes'], AIs_out)
+
+    # ## Add additional params
+    #params_out = inputHandler.add_params (AIs_out, params_out, aDiseaseTree_out)
+    params_out = inputHandler.add_params (params_out)
+    return params_out, aDiseaseTree_out, AIs_out
+
 
 def get_pos_prev(params_in, gp_name=None, dis_idx = None, AI_name = None, single_disease=False):
     
