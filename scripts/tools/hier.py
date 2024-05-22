@@ -327,7 +327,8 @@ def service_time_duration(open_times, close_times):
 
 
 ###############################################################################################
-def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
+def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy, matched_group_hierarchy):
+    #print(params)
     means_alone = []
     var_alone = []
     neg_means = []
@@ -341,38 +342,42 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     Sps = []
     gp_probs = []
     prob_thisdis_given_negs = []
-    probdis_givenpos_array = []
-    probnondis_givenpos_array = []
-    probdis_givenneg_array = []
-    probnondis_givenneg_array = []
     wait_times_dnd = []
 
-    #below code assumes that each disease has an AI.
-    for i in range(len(AI_group_hierarchy)):
-        groupname = AI_group_hierarchy[i]
-        diseasename = diseases_with_AI[i]
-        vendor = vendor_hierarchy[i]
-        Se = params['SeThreshs'][vendor]
+    #below code assumes that each disease has an AI. 
+    #print('matched_group_hiearchy', matched_group_hierarchy)
+    #print('disease_hierarchy', disease_hierarchy)
+    for i in range(len(matched_group_hierarchy)):
+        groupname = matched_group_hierarchy[i]
+        diseasename = disease_hierarchy[i]
+        if i < len(vendor_hierarchy):
+            vendor = vendor_hierarchy[i]
+            Se = params['SeThreshs'][vendor]
+            Sp = params['SpThreshs'][vendor]
+        else:
+            Se = 0
+            Sp = 1
         Ses.append(Se)
-        Sp = params['SpThreshs'][vendor]
         Sps.append(Sp)
         dis_prob = params['diseaseGroups'][groupname]['diseaseProbs'][0]
         gp_prob = params['diseaseGroups'][groupname]['groupProb']
         gp_probs.append(gp_prob)
 
         dis_servicerate = params['meanServiceTimes'][groupname][diseasename]
-        nondis_servicerate = params['meanServiceTimes'][AI_group_hierarchy[i]]['non-diseased']
+        nondis_servicerate = params['meanServiceTimes'][groupname]['non-diseased']
         dis_var = 2 * dis_servicerate**2
         nondis_var = 2 * nondis_servicerate**2
 
-        probdis_givenpos = Se * dis_prob / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
-        probnondis_givenpos = (1 - Sp) * (1 - dis_prob) / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
-        probdis_givenneg = (1 - Se) * dis_prob / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
-        probnondis_givenneg = Sp * (1 - dis_prob) / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
-        probdis_givenpos_array.append(gp_prob * probdis_givenpos)
-        probnondis_givenpos_array.append(gp_prob * probnondis_givenpos)
-        probdis_givenneg_array.append(gp_prob * probnondis_givenneg)
-        probnondis_givenneg_array.append(gp_prob * probnondis_givenneg)
+        if i < len(vendor_hierarchy):
+            probdis_givenpos = Se * dis_prob / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
+            probdis_givenneg = (1 - Se) * dis_prob / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
+            probnondis_givenpos = (1 - Sp) * (1 - dis_prob) / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))
+            probnondis_givenneg = Sp * (1 - dis_prob) / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))
+        else:
+            probdis_givenpos = 0
+            probdis_givenneg = dis_prob
+            probnondis_givenpos = 0
+            probnondis_givenneg = 1-dis_prob
 
         pos_means.append(dis_servicerate * probdis_givenpos + nondis_servicerate * probnondis_givenpos) #* changed
         pos_vars.append(dis_var * probdis_givenpos + nondis_var * probnondis_givenpos)
@@ -408,6 +413,8 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
 
     wait_times_dnd_pos = np.array(wait_times[:-1]) * np.array(Ses) + wait_times[-1] * (1 - np.array(Ses))
     wait_time_neg = sum(np.array(wait_times[:-1]) * (1 - np.array(Sps)) * np.array(gp_probs) + wait_times[-1] * np.array(Sps) * np.array(gp_probs))
+    
+    #print('wait_times_dnd_pos', wait_times_dnd_pos)
     return wait_time_neg, wait_times_dnd_pos[chosen_dis_idx]
 
 
@@ -501,7 +508,7 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
 
     # 1. Get the index of the chosen disease within its group. Used later to extract matching probs.
     #print(params['diseaseGroups'])
-    chosen_dis_idx = list(params['diseaseGroups'].keys()).index(chosen_gp) #***** MICHELLE EDIT
+    chosen_dis_idx = disease_hierarchy.index(chosen_dis) #***** MICHELLE EDIT
     #print(chosen_dis_idx)
     
     # 2. Extract wait time from simulations, mean and 95% confidence interval.
@@ -560,8 +567,8 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
         else:
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
-    elif chosen_dis not in diseases_with_AI: 
-        # If chosen disease does not have an AI, return the AI negative wait-times.
+    elif chosen_dis not in diseases_with_AI:
+        theory_neg_NP, theory_chosen_dis_NP = get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy) 
         if priorityType == 'NP':
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis_NP, sim_mean, sim_95lo, sim_95hi))
         else:
