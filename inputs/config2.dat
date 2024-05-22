@@ -102,6 +102,13 @@ TPFThresh     0.9
 FPFThresh     0.3       
 rocFile       None 
 
+Vendor2
+groupName     GroupCX
+targetDisease C
+TPFThresh     0.8  
+FPFThresh     0.1  
+rocFile       None 
+
 ################################################
 ## Simulation setting
 ################################################
