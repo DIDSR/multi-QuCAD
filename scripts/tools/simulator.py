@@ -675,11 +675,7 @@ class simulator (object):
                            doctor_treating_diseased    if group=='diseased'      else \
                            doctor_treating_nondiseased if group=='non-diseased'  else \
                            doctor_treating_positive    if group=='positive'      else \
-                           doctor_treating_negative    if group=='negative'      else \
-                           numpy.logical_and (~doctor_treating_interrupting, numpy.logical_and (doctor_treating_diseased   , doctor_treating_positive)) if group=='TP' else \
-                           numpy.logical_and (~doctor_treating_interrupting, numpy.logical_and (doctor_treating_nondiseased, doctor_treating_positive)) if group=='FP' else \
-                           numpy.logical_and (~doctor_treating_interrupting, numpy.logical_and (doctor_treating_nondiseased, doctor_treating_negative)) if group=='TN' else \
-                           numpy.logical_and (~doctor_treating_interrupting, numpy.logical_and (doctor_treating_diseased   , doctor_treating_negative)) ## FN
+                           doctor_treating_negative    ##if group=='negative'      
             #  Count the number of True in is_group i.e. number of patients in this subgroup
             #  currently being served by the radiologists
             is_group = is_group.astype (bool)
@@ -1649,6 +1645,4 @@ class simulator (object):
         #  Collect waiting times & n_patients
         self._collect_waiting_times()
         self._collect_n_patients() # Not updated for hierarchical queues !!! 
-        # self._aqueue[qtype].queue -- this function will print all patients in the queue as a list. The list may be unsorted.
-        # This can be used to simplify the collect_n_patients() function.
 

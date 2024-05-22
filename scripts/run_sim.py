@@ -22,81 +22,10 @@
 ################################
 ## Import packages
 ################################ 
-import numpy, pickle, time, os, sys, cProfile, io, pstats, argparse
+import pickle, time, os, sys, cProfile, io, pstats, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, simulator, trialGenerator
-
-################################
-## Define lambdas
-################################ 
-
-################################
-## Define functions
-################################ 
-def print_sim_performance (oneSim, AIs, params):
-
-    ## Check with group prob and disease prevalence
-    patient_groups = numpy.array ([p.group_name for p in oneSim.get_noninterrupting_records('fifo')])
-    for groupName, groupInfo in params['diseaseGroups'].items():
-        
-        # 1. check group prob
-        groupProb = groupInfo['groupProb']
-        patient_groupnames_in_this_group = patient_groups[patient_groups==groupName]
-        g_sim = len (patient_groupnames_in_this_group) / len (patient_groups)
-        print ('+-----------------------------------------------')
-        print ('| Group {0} ({1}):'.format (groupName, len (patient_groupnames_in_this_group)))
-        print ('|   * Group prob (theory, sim): {0:.3f}, {1:.3f}'.format (groupProb, g_sim))
-        
-        # 2. check if any disease that don't belong to this group
-        patient_diseases = numpy.array ([p.disease_name for p in oneSim.get_noninterrupting_records('fifo')
-                                         if p.group_name == groupName])
-        disease_names = numpy.array (groupInfo['diseaseNames'] + ['non-diseased'])
-        unexpected_patient_diseases = patient_diseases[~numpy.in1d (patient_diseases, disease_names)]
-        if len (unexpected_patient_diseases) > 0: 
-            print ('|   * Unexpected disease in this group: {0}'.format (unexpected_patient_diseases))
-        
-        # 3. check disease prob within this group
-        disease_probs = numpy.array (groupInfo['diseaseProbs'] + [1-sum(groupInfo['diseaseProbs'])])
-        for diseaseName, diseaseProb in zip (disease_names,  disease_probs):
-            patient_diseasenames_in_this_group = patient_diseases[patient_diseases==diseaseName]
-            d_sim = len (patient_diseasenames_in_this_group) / len (patient_diseases)
-            print ('|   * Disease {0} ({1}):'.format (diseaseName, len (patient_diseasenames_in_this_group)))
-            print ('|       -- Disease prob (theory, sim): {0:.3f}, {1:.3f}'.format (diseaseProb, d_sim))
-
-    print ('+-----------------------------------------------\n')
-
-    ## Check with AI performance
-    for AIname, anAI in AIs.items():
-        
-        groupName = anAI.groupName
-        targetDisease = anAI.targetDisease
-
-        # Extract patients within the target group
-        patients_in_gp = numpy.array ([p for p in oneSim.get_noninterrupting_records('fifo')
-                                       if p.group_name == groupName])        
-        # Divide patients into TP, FP, TN, FN based on target diseased
-        TP = len ([p for p in patients_in_gp if p.disease_name==targetDisease and p.is_positives[AIname]])
-        FP = len ([p for p in patients_in_gp if not p.disease_name==targetDisease and p.is_positives[AIname]])
-        FN = len ([p for p in patients_in_gp if p.disease_name==targetDisease and not p.is_positives[AIname]])
-        TN = len ([p for p in patients_in_gp if not p.disease_name==targetDisease and not p.is_positives[AIname]])        
-    
-        ppv_sim = 0 if TP + FP == 0 else TP / (TP + FP)
-        npv_sim = 0 if TN + FN == 0 else TN / (TN + FN)
-        
-        print ('+-----------------------------------------------')
-        print ('| AI {0} ({1}) in group {2}:'.format (AIname, targetDisease, groupName))
-        print ('|    * PPV (theory, sim): {0:.4f}, {1:.4f}'.format (params['probs_ppv_npv']['ppv'][groupName][AIname], ppv_sim))
-        print ('|    * NPV (theory, sim): {0:.4f}, {1:.4f}'.format (params['probs_ppv_npv']['npv'][groupName][AIname], npv_sim))
-        
-    print ('+-----------------------------------------------\n')
-    
-    ## Quick report of time difference per disease subgroup (including non-disease):
-    #from hier.py
-    #print('hr: ', hier.df_hr_mean, hier.df_95_ci_hr)
-    #print('pr: ', hier.df_pr_mean, hier.df_95_ci_pr)
-    #print('fifo: ', hier.df_fifo_mean, hier.df_95_ci_fifo)
-    #print('theory: ', hier.df_theory)
+from tools import inputHandler, trialGenerator
 
 ################################
 ## Script starts here!
@@ -116,19 +45,11 @@ if __name__ == '__main__':
     if params['doRunTime']:
         pr = cProfile.Profile()
         pr.enable()
-    
-    ## Check AI performance
-    oneSim = simulator.simulator ()
-    oneSim.set_params (params)
-    oneSim.track_log = False
-    oneSim.simulate_queue (AIs, aDiseaseTree)
-    print_sim_performance (oneSim, AIs, params)
 
     ## Run trials
     t0 = time.time()
     trialGen = trialGenerator.trialGenerator ()
     trialGen.set_params (params, AIs)
-    #allTrials, maxSim = trialGen.simulate_trials (anAI)
     trialGen.simulate_trials (AIs, aDiseaseTree)
     params['runTimeMin'] = (time.time() - t0)/60 # minutes
     print ('{0} trials took {1:.2f} minutes'.format (params['nTrials'], params['runTimeMin']))
@@ -152,6 +73,6 @@ if __name__ == '__main__':
         ps = pstats.Stats(pr, stream=s).sort_stats('cumtime')
         ps.print_stats()
 
-        with open (params['runtimeFile'], 'w+') as f:
+        with open (params['runTimeFile'], 'w+') as f:
             f.write (s.getvalue())
         f.close()

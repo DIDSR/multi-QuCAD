@@ -103,6 +103,8 @@ class trialGenerator (object):
         self._serviceTimes = None                  # mean reading time by interrupting, diseased, and non-diseased
         self._diseaseGroups = None                 # disease prevalences within each group
 
+        self._probs_ppv_npv = None                 # For printing sim performance
+
     ## +----------------------------------------
     ## | Class properties
     ## +----------------------------------------
@@ -496,17 +498,28 @@ class trialGenerator (object):
             patient_groupnames_in_this_group = patient_groups[patient_groups==groupName]
             g_sim = len (patient_groupnames_in_this_group) / len (patient_groups)
             self._sim_performance['group'][groupName]['groupFraction'].append (g_sim)
+            print ('+-----------------------------------------------')
+            print ('| Group {0} ({1}):'.format (groupName, len (patient_groupnames_in_this_group)))
+            print ('|   * Group prob (theory, sim): {0:.3f}, {1:.3f}'.format (groupInfo['groupProb'], g_sim))            
             
             # 2. check disease prob within this group
             patient_diseases = numpy.array ([p.disease_name for p in oneSim.get_noninterrupting_records('fifo')
                                              if p.group_name == groupName])
             disease_names = numpy.array (groupInfo['diseaseNames'] + ['non-diseased'])
             unexpected_patient_diseases = patient_diseases[~numpy.in1d (patient_diseases, disease_names)]
-            for diseaseName in disease_names:
+            if len (unexpected_patient_diseases) > 0: 
+                print ('|   * Unexpected disease in this group: {0}'.format (unexpected_patient_diseases))            
+
+            disease_probs = numpy.array (groupInfo['diseaseProbs'] + [1-sum(groupInfo['diseaseProbs'])])
+            for diseaseName, diseaseProb in zip (disease_names,  disease_probs):
                 patient_diseasenames_in_this_group = patient_diseases[patient_diseases==diseaseName]
                 d_sim = len (patient_diseasenames_in_this_group) / len (patient_diseases)
                 self._sim_performance['group'][groupName]['diseases'][diseaseName].append (d_sim)
-        
+                print ('|   * Disease {0} ({1}):'.format (diseaseName, len (patient_diseasenames_in_this_group)))
+                print ('|       -- Disease prob (theory, sim): {0:.3f}, {1:.3f}'.format (diseaseProb, d_sim))
+
+        print ('+-----------------------------------------------\n')        
+
         ## Check with AI performance
         for AIname, anAI in AIs.items():
             
@@ -529,6 +542,13 @@ class trialGenerator (object):
             self._sim_performance['AI'][AIname]['ppv'].append (ppv_sim)
             self._sim_performance['AI'][AIname]['npv'].append (npv_sim)
 
+            print ('+-----------------------------------------------')
+            print ('| AI {0} ({1}) in group {2}:'.format (AIname, targetDisease, groupName))
+            print ('|    * PPV (theory, sim): {0:.4f}, {1:.4f}'.format (self._probs_ppv_npv['ppv'][groupName][AIname], ppv_sim))
+            print ('|    * NPV (theory, sim): {0:.4f}, {1:.4f}'.format (self._probs_ppv_npv['npv'][groupName][AIname], npv_sim))
+            
+        print ('+-----------------------------------------------\n')
+
     def set_params (self, params, AIs):
         
         ''' Function to set parameters for all trials.
@@ -550,7 +570,8 @@ class trialGenerator (object):
         self.nRadiologists = params['nRadiologists']
         self.nPatientPadsStart = params['nPatientsPads'][0]
         self.nPatientPadsEnd = params['nPatientsPads'][1]
-        self.hierDict = params['hierDict']        
+        self.hierDict = params['hierDict']
+        self._probs_ppv_npv = params['probs_ppv_npv']
     
         ## Once we know the disease groups, we can initialize sim_performanace.
         self._sim_performance['group'] = {}
@@ -583,15 +604,15 @@ class trialGenerator (object):
         ## Generate trials
         for i in range (self._nTrials):
             
-            #if i > 10: break
+            if i%10 == 0 :
+                self._logger.debug (' -- {0} / {1} simulations'.format (i, self._nTrials))
 
-            if i%10 == 0: self._logger.debug (' -- {0} / {1} simulations'.format (i, self._nTrials))
             ## Generate a trial
             sim = self._reset_sim (sim)
             sim.track_log = False
-            sim.simulate_queue (AIs, aDiseaseTree, hier.hier_classes_dict)
-            #self._get_sim_performance (sim, AIs)
-            #if i%10 == 0: self._print_timeStats (sim, i)
+            sim.simulate_queue (AIs, aDiseaseTree)
+            if i==0: self._get_sim_performance (sim, AIs)
+
             # Get waiting time data frame (one frame per trial)
             df = sim.waiting_time_dataframe
             df['trial_id'] = 'trial_' + str (i).zfill (3)
