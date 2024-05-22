@@ -52,10 +52,24 @@ def get_eqvt_se_sp(se_array, sp_array, all_pop_d_prevalence):
     '''Compute equivalent sensitivity and specificity from 
     the lists of Se and Sp corresponding to the AIs to be combined.
     Note: This function is only valid if disease groups for all AIs are independent.'''
-    all_pop_nd_prevalence = 1 - all_pop_d_prevalence # array of non-diseased fractions
+    # This should be 1 - sum of all disease prevalence
+    #all_pop_nd_prevalence = 1 - all_pop_d_prevalence # array of non-diseased fractions
+    all_pop_nd_prevalence = 1 - np.sum (all_pop_d_prevalence)
 
+    ## If only 1 AI in each group, e.g. GroupCTA has disease A & B with 1 AIa looking for A and
+    ##                                  GroupCX  has disease C with 1 AIc looking for C
+    ##
+    ##       #A+byAIa + #C+byAIc     #A+byAIa/#A * #A/N + #C+byAIc/#C * #C/N      SeA * piA + SeC * piC
+    ## Se = --------------------- = ------------------------------------------ = -----------------------
+    ##             #A + #C                         #A/N + #C/N                          piA + piC
+    ## If multiple AIs in each group, e.g. GroupCTA also has AIb looking for B, then the
+    ## numerator needs to include cases with AIa falsely flagged B-diseased cases and vice versa.
     eqvt_se = np.sum(se_array * all_pop_d_prevalence) / np.sum(all_pop_d_prevalence)
-    eqvt_sp = np.sum(sp_array * all_pop_nd_prevalence) / np.sum(all_pop_nd_prevalence)
+
+    ## This Sp follows similar logic. Note that accidentally flagged cases diseased with B
+    ## by AIa is counted as FP in this definition.
+    # Rucha's method is incorrect
+    #eqvt_sp = np.sum(sp_array * all_pop_nd_prevalence) / np.sum(all_pop_nd_prevalence)
 
     return eqvt_se, eqvt_sp
 
@@ -219,9 +233,13 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
         dis = new_params['AIinfo'][vendor]['targetDisease']
         gp = new_params['AIinfo'][vendor]['groupName']
         # Find disease index in the list of all diseases in a gp.
-        dis_idx =  list(params['diseaseGroups'].keys()).index(gp)
+        # Elim: bug fix; original line is jsut group prob
+        #dis_idx =  list(params['diseaseGroups'].keys()).index(gp)
+        dis_idx = np.where (np.array (params['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
         # Compute disease prevalence in population
-        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
+        # Elim: bug fix; now corresponds to disease index
+        #pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
+        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][dis_idx] * new_params['diseaseGroups'][gp]['groupProb']
         all_pop_prevalence.append(pop_prev)
 
     all_se = np.array(all_se)
@@ -327,6 +345,9 @@ def service_time_duration(open_times, close_times):
 
 
 ###############################################################################################
+# revised function for computing non-preemptive theory for different groups, should work regardless of AI performance
+
+
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy, matched_group_hierarchy):
     means_alone = []
     var_alone = []
@@ -503,7 +524,7 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
 
     # 1. Get the index of the chosen disease within its group. Used later to extract matching probs.
     #print(params['diseaseGroups'])
-    chosen_dis_idx = disease_hierarchy.index(chosen_dis) #***** MICHELLE EDIT
+    chosen_dis_idx = list(params['diseaseGroups'].keys()).index(chosen_gp) #***** MICHELLE EDIT
     #print(chosen_dis_idx)
     
     # 2. Extract wait time from simulations, mean and 95% confidence interval.
@@ -562,18 +583,18 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
         else:
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
-    elif chosen_dis not in diseases_with_AI:
-        theory_neg_NP, theory_chosen_dis_NP = get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy) 
+    elif chosen_dis not in diseases_with_AI: 
+        # If chosen disease does not have an AI, return the AI negative wait-times.
         if priorityType == 'NP':
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis_NP, sim_mean, sim_95lo, sim_95hi))
         else:
             print('diseased', chosen_dis, 'theory, sim: %.2f, %.2f , [%.2f, %.2f]'%(theory_chosen_dis, sim_mean, sim_95lo, sim_95hi))
 
-# Report wait-times for non-diseased subgroup.
+# Report wait-times for AI negative subgroup. (Optional.)
 all_trial_mean, all_trial_95lo, all_trial_95hi = [], [], []
 
 for trial_idx in np.arange(0, num_trials):
-    filtered_df = df.loc[(df['is_diseased'] == False) & (df['trial_num'] == trial_idx)]['hierarchical'].to_numpy()
+    filtered_df = df.loc[(df['is_positive'] == False) & (df['trial_num'] == trial_idx)]['hierarchical'].to_numpy()
     trial_mean = np.mean(filtered_df); ci_95 = get_95_ci(filtered_df)
     all_trial_mean.append(trial_mean); all_trial_95lo.append(ci_95[0]); all_trial_95hi.append(ci_95[1])
 
