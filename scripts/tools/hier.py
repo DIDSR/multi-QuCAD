@@ -328,7 +328,6 @@ def service_time_duration(open_times, close_times):
 
 ###############################################################################################
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy, matched_group_hierarchy):
-    #print(params)
     means_alone = []
     var_alone = []
     neg_means = []
@@ -344,9 +343,6 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     prob_thisdis_given_negs = []
     wait_times_dnd = []
 
-    #below code assumes that each disease has an AI. 
-    #print('matched_group_hiearchy', matched_group_hierarchy)
-    #print('disease_hierarchy', disease_hierarchy)
     for i in range(len(matched_group_hierarchy)):
         groupname = matched_group_hierarchy[i]
         diseasename = disease_hierarchy[i]
@@ -414,7 +410,6 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     wait_times_dnd_pos = np.array(wait_times[:-1]) * np.array(Ses) + wait_times[-1] * (1 - np.array(Ses))
     wait_time_neg = sum(np.array(wait_times[:-1]) * (1 - np.array(Sps)) * np.array(gp_probs) + wait_times[-1] * np.array(Sps) * np.array(gp_probs))
     
-    #print('wait_times_dnd_pos', wait_times_dnd_pos)
     return wait_time_neg, wait_times_dnd_pos[chosen_dis_idx]
 
 
