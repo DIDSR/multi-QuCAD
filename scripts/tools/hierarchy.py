@@ -76,7 +76,7 @@ class hierarchy (object):
                 aiName = None if len (thisAI) == 0 else thisAI[0]
                 AINames.append(aiName)
         
-        order = numpy.array (order) - 1
+        order = numpy.argsort (order)
         diseaseNames = numpy.array (diseaseNames)
         groupNames = numpy.array (groupNames)
         AINames = numpy.array (AINames)

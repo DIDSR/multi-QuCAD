@@ -113,7 +113,6 @@ def get_theory_waitTime (aclass, variable, params):
 
     print ('Should not land here!')
 
-
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
     means_alone = []
     var_alone = []

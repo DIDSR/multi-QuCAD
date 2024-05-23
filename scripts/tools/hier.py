@@ -1,7 +1,7 @@
 import scipy.stats, pickle, time, os, sys, cProfile, io, pstats, matplotlib, argparse
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator, plotter
+from tools import inputHandler, diseaseTree, AI, simulator, trialGenerator, plotter, hierarchy
 from run_sim import *
 
 matplotlib.use ('Agg')
@@ -219,6 +219,73 @@ def get_all_params(config_file_in, keep_ai='all', create_EQgrps = False):
     params_out = inputHandler.add_params (AIs_out, params_out, aDiseaseTree_out)
     return params_out, aDiseaseTree_out, AIs_out
 
+def get_eqvt_readtime (meanServiceTimes, diseaseGroups, AIinfo, groups_wAI):
+
+    ## Disease 'Z' is composed of all disease conditions that the AI is involved in the equivalent group
+    ##
+    ## If only 1 AI in each group, e.g. GroupCTA has disease A & B with 1 AIa looking for A and
+    ##                                  GroupCX  has disease C with 1 AIc looking for C
+    ##                                  GroupXR  has disease D with no AI
+    ## Z is made of A and C. and ND is B and ND-CTA and ND-CX
+    ## 
+    ## read-time for Z (TZ) is... 
+    ##    1/TZ = pA / TA + pC / TC
+    ## where pA = A / (A+C) and TA is the mean read time for A diseased cases
+    ##
+
+    diseases, groupsdis = [], []
+    for _, aiinfo in AIinfo.items():
+        diseases.append (aiinfo['targetDisease'])
+        groupsdis.append (aiinfo['groupName'])
+
+    normProb = sum ([diseaseGroups[gp]['groupProb'] for gp in np.unique (groupsdis)])
+
+    probs, Ts = [], []
+    for disease, group in zip (diseases, groupsdis):
+        dis_idx = np.where (np.array (diseaseGroups[group]['diseaseNames'])==disease)[0][0]
+        prob = diseaseGroups[group]['diseaseProbs'][dis_idx]* diseaseGroups[group]['groupProb'] / normProb
+        probs.append (prob)
+        Ts.append (meanServiceTimes[group][disease])
+    probs = np.array (probs)
+    Ts = np.array (Ts)
+    ps = probs / np.sum (probs)
+    TZ = 1/ np.sum ([p/T for p, T in zip (ps, Ts)])
+
+    ## For non-diseased,
+    nondiseases, groupsdis = [], []
+    for gpname, group in diseaseGroups.items():
+        ## Ignore groups without AI of interests
+        if not gpname in groups_wAI: continue
+        for disname in group['diseaseNames']:
+            ## Ignore those that has an AI to identify
+            if disname in diseases: continue
+            nondiseases.append (disname)
+            groupsdis.append (gpname)
+        ## Now deal with non-diseased
+        disname = 'non-diseased_' + gpname
+        nondiseases.append (disname)
+        groupsdis.append (gpname)
+
+    normProb = sum ([diseaseGroups[gp]['groupProb'] for gp in np.unique (groupsdis)])
+
+    probs, Ts = [], []
+    for nondisease, group in zip (nondiseases, groupsdis):
+        if nondisease in diseaseGroups[group]['diseaseNames']:
+            dis_idx = np.where (np.array (diseaseGroups[group]['diseaseNames'])==nondisease)[0][0]
+            prob = diseaseGroups[group]['diseaseProbs'][dis_idx]
+        else:
+            prob = 1 - sum (diseaseGroups[group]['diseaseProbs'])
+        probs.append (prob* diseaseGroups[group]['groupProb'] / normProb)
+
+        nondiseasename = 'non-diseased' if 'non-diseased' in nondisease else nondisease
+        Ts.append (meanServiceTimes[group][nondiseasename])
+    probs = np.array (probs)
+    Ts = np.array (Ts)
+    ps = probs / np.sum (probs)
+    TNZ = 1/ np.sum ([p/T for p, T in zip (ps, Ts)])    
+
+    return TZ, TNZ
+
 def get_new_params_elim(new_params): # do only if equivalent AIs and disease probs are needed for >1 AI/disease
     
     '''Compute and return params after creating equivalent AIs from multiple AIs. 
@@ -243,20 +310,21 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
     # 1. Create an equivalent AI. Assumption: Diseases seen by AIs are uncorrelated!!!
     # 2. Create an equivalent group & the corresponding diseased probability. 
     #     Assumption: All diseases in a gp are uncorrelated.
-    all_se, all_sp, all_pop_prevalence, all_groupProbs = [], [], [], []
+    all_se, all_sp, all_pop_prevalence, all_groupProbs, all_groupNames = [], [], [], [], []
 
     for vendor in new_params['AIinfo'].keys():
 
         all_se.append(new_params['AIinfo'][vendor]['TPFThresh'])
         all_sp.append(1 - new_params['AIinfo'][vendor]['FPFThresh'])
         all_groupProbs.append (new_params['diseaseGroups'][new_params['AIinfo'][vendor]['groupName']]['groupProb'])
+        all_groupNames.append (new_params['AIinfo'][vendor]['groupName'])
 
         dis = new_params['AIinfo'][vendor]['targetDisease']
         gp = new_params['AIinfo'][vendor]['groupName']
         # Find disease index in the list of all diseases in a gp.
         # Elim: bug fix; original line is jsut group prob
         #dis_idx =  list(params['diseaseGroups'].keys()).index(gp)
-        dis_idx = np.where (np.array (params['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
+        dis_idx = np.where (np.array (new_params['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
         # Compute disease prevalence in population
         # Elim: bug fix; now corresponds to disease index
         #pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
@@ -267,33 +335,39 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
     all_sp = np.array(all_sp)
     all_pop_prevalence = np.array(all_pop_prevalence) 
     all_groupProbs = np.array (all_groupProbs)
+    all_groupNames = np.array (all_groupNames)
 
     EQSe, EQSp = get_eqvt_se_sp(all_se, all_sp, all_pop_prevalence, all_groupProbs)
-    new_params['AIinfo'] = {'Vendor0': {'groupName': 'GroupEQ', 'targetDisease': 'Z', 'TPFThresh': EQSe, 'FPFThresh': 1-EQSp, 'rocFile': None}}
     
     disEQ_prob = np.sum(all_pop_prevalence) / gpEQ_prob # prob of diseased patients in the EQ group. Diseases are assumed to be uncorrelated, hence probs are summed.
-    new_diseaseGroups.update({'GroupEQ': {'diseaseNames': ['Z'], 'diseaseProbs': [disEQ_prob], 'groupProb': gpEQ_prob}})
+    new_diseaseGroups.update({'GroupEQ': {'diseaseNames': ['Z'], 'diseaseProbs': [disEQ_prob], 'groupProb': gpEQ_prob, 'diseaseRanks':[1]}})
 
     if groups_noAI:
         for gp in groups_noAI:
             new_diseaseGroups.update({key: new_params['diseaseGroups'][key] for key in new_params['diseaseGroups'] if key == gp})
-
-    new_params['diseaseGroups'] = new_diseaseGroups
     
     # 3. Update the corresponding mean service times.
     # Set the default service time for diseased & non-diseased = the non-diseased reading time in the first group with AI
     # This will change if mu_d != mu_nd.
-    for ii in new_params['diseaseGroups'].keys():
-        new_meanServiceTimes.update({key: new_params['meanServiceTimes'][key] for key in new_params['meanServiceTimes'] if key == ii})
+    #for ii in new_params['diseaseGroups'].keys():
+    #    new_meanServiceTimes.update({key: new_params['meanServiceTimes'][key] for key in new_params['meanServiceTimes'] if key == ii})
+    new_meanServiceTimes['interrupting'] = new_params['meanServiceTimes']['interrupting']
+    for groupname in new_params['diseaseGroups'].keys():
+        if not groupname in new_params['meanServiceTimes']: continue
+        new_meanServiceTimes[groupname] = new_params['meanServiceTimes'][groupname] 
     
-    defaultServiceTime = new_params['meanServiceTimes'][groups_wAI[0]]['non-diseased'] 
+    #defaultServiceTime = new_params['meanServiceTimes'][groups_wAI[0]]['non-diseased'] 
 
-    new_meanServiceTimes.update({'interrupting':new_params['meanServiceTimes']['interrupting']})
-    new_meanServiceTimes.update({'GroupEQ':{'Z': defaultServiceTime, 'non-diseased': defaultServiceTime}})
+    TDZ, TNDZ = get_eqvt_readtime (new_params['meanServiceTimes'], new_params['diseaseGroups'], new_params['AIinfo'], groups_wAI)
+    new_meanServiceTimes['GroupEQ'] = {'Z': TDZ, 'non-diseased': TNDZ}
+
+    #new_meanServiceTimes.update({'interrupting':new_params['meanServiceTimes']['interrupting']})
+    #new_meanServiceTimes.update({'GroupEQ':{'Z': defaultServiceTime, 'non-diseased': defaultServiceTime}})
     new_params['meanServiceTimes'] = new_meanServiceTimes
+    new_params['diseaseGroups'] = new_diseaseGroups
+    new_params['AIinfo'] = {'Vendor0': {'groupName': 'GroupEQ', 'targetDisease': 'Z', 'TPFThresh': EQSe, 'FPFThresh': 1-EQSp, 'rocFile': None}}    
     
     return new_params
-
 
 def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
     '''1. Get params from the config file OR
@@ -311,21 +385,21 @@ def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
     # For theory, this function may be called to create equivalent groups, either by combining AIs
     # or as a dummy case with a single AI
     if create_EQgrps and num_ais > 1: 
-        params_out = get_new_params(params_out)
+        params_out = get_new_params_elim(params_out)
     elif create_EQgrps and num_ais == 1:
         params_out = update_disease_names(params_out)
         
     # Create an AI object
-    AIs_out = {AIname:create_AI (AIname, AIinfo, doPlots=params_out['doPlots'], plotPath=params_out['plotPath'])
-           for AIname, AIinfo in params_out['AIinfo'].items()}
+    #AIs_out = {AIname:create_AI (AIname, AIinfo, doPlots=params_out['doPlots'], plotPath=params_out['plotPath'])
+    #       for AIname, AIinfo in params_out['AIinfo'].items()}
     ## Create a disease tree
-    aDiseaseTree_out = create_disease_tree (params_out['diseaseGroups'],
-                                        params_out['meanServiceTimes'], AIs_out)
+    #aDiseaseTree_out = create_disease_tree (params_out['diseaseGroups'],
+    #                                    params_out['meanServiceTimes'], AIs_out)
 
     # ## Add additional params
     #params_out = inputHandler.add_params (AIs_out, params_out, aDiseaseTree_out)
-    params_out = inputHandler.add_params (params_out)
-    return params_out, aDiseaseTree_out, AIs_out
+    params_out, AIs, aDiseaseTree = inputHandler.add_params (params_out)
+    return params_out, aDiseaseTree, AIs
 
 
 def get_pos_prev(params_in, gp_name=None, dis_idx = None, AI_name = None, single_disease=False):
@@ -470,13 +544,13 @@ params, aDiseaseTree, AIs = get_all_params(configFile)
 #disease_hierarchy = [item for sublist in [params['diseaseGroups'][jj]['diseaseNames']
 #                                          for jj in list(params['diseaseGroups'].keys())]
 #                    for item in sublist]
-#hier = hierarchy.hierarchy()
-#hier.build_hierarchy (params['diseaseGroups'], params['AIinfo'])
-#disease_hierarchy = hier.diseaseNames
+hier = hierarchy.hierarchy()
+hier.build_hierarchy (params['diseaseGroups'], params['AIinfo'])
+disease_hierarchy = hier.diseaseNames
 
 #vendor_hierarchy =  list(params['AIinfo'].keys())
 ## Now based on disease rank provided by user
-# vendor_hierarchy = hier.AINames ## could be None if no AI for that disease condition
+vendor_hierarchy = hier.AINames ## could be None if no AI for that disease condition
 
 #print('vendor_hierarchy', vendor_hierarchy)
 #num_trials = inputHandler.num_trials
@@ -494,50 +568,51 @@ params, aDiseaseTree, AIs = get_all_params(configFile)
 #        if disease in params['diseaseGroups'][jj]['diseaseNames']:
 #            matched_group_hierarchy.append(jj) 
 #This is now...
-#matched_group_hierarchy = hier.groupNames
+matched_group_hierarchy = hier.groupNames
 
 # The following dictionary is an input to the patient class, which has been updated .
-hier_classes_dict = {}
-for ii, vendor_name in enumerate(vendor_hierarchy):
-    # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
-    hier_classes_dict.update({vendor_name : {'groupName': AI_group_hierarchy[ii],
-                                             'disease_num':ii+3}})
+#hier_classes_dict = {}
+#for ii, vendor_name in enumerate(vendor_hierarchy):
+#    # For hierarchical queuing, disease number starts at 3 (most time-sensitive class).
+#    hier_classes_dict.update({vendor_name : {'groupName': AI_group_hierarchy[ii],
+#                                             'disease_num':ii+3}})
 
 # Run trials with all original parameters: simulation of hierarchical queues with no equivalent AIs, 
 # pre-resume (equal priority) and fifo queueing.
 
-all_trial_wt = []
-all_dfs = []
+#all_trial_wt = []
+#all_dfs = []
 
 
-params['verbose'] = False 
+#params['verbose'] = False 
 # For now, all logs are off, including hard-coded probability logs.
 
-for ii in np.arange(0, num_trials): # Run trials
+#for ii in np.arange(0, num_trials): # Run trials
+#
+#    oneSim = simulator.simulator ()
+#    oneSim.set_params (params)
+#    oneSim.track_log = False
+#    oneSim.simulate_queue (AIs, aDiseaseTree, hier_classes_dict)
 
-    oneSim = simulator.simulator ()
-    oneSim.set_params (params)
-    oneSim.track_log = False
-    oneSim.simulate_queue (AIs, aDiseaseTree, hier_classes_dict)
-
-    thisdf = oneSim._waiting_time_dataframe
-    thisdf['trial_num'] = ii
+#    thisdf = oneSim._waiting_time_dataframe
+#    thisdf['trial_num'] = ii
     
-    thisdf.reset_index(drop=True, inplace=True)
-    all_dfs.append(thisdf)
+#    thisdf.reset_index(drop=True, inplace=True)
+#    all_dfs.append(thisdf)
     
-df = pd.concat(all_dfs, axis=0) 
+#df = pd.concat(all_dfs, axis=0) 
 
 # Compute theoretical wait-times for hierarchical queuing and compare against simulation.
 
 # Get the mean wait-time for the AI negative patients. 
 # Combine all AIs, create an equivalent group, get the AI- mean wait-times from preresume for this equivalent group.
 
-params_all, aDiseaseTree_all, AIs_all = get_all_params(configFile, keep_ai = vendor_hierarchy, create_EQgrps = True)
+#params_all, aDiseaseTree_all, AIs_all = get_all_params(configFile, keep_ai = vendor_hierarchy, create_EQgrps = True)
+params_all, AIs_all, aDiseaseTree_all = get_all_params_elim(params, keep_ai = vendor_hierarchy, create_EQgrps = True)
 params_all['SeThresh'] = list(params_all['SeThreshs'].values())[0] # To match the expected format.
 params_all['SpThresh'] = list(params_all['SpThreshs'].values())[0]
 theory_neg = calculator.get_theory_waitTime ('negative', 'preresume', params_all) # mean wait-time all AI-
-    
+
 
 # For each disease in a group (diseases and groups have one-to-one correspondence here),
 # get the mean-wait times from simulation and theory. This can include diseases without AI.
