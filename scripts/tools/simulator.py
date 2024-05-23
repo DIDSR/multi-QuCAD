@@ -1416,16 +1416,19 @@ class simulator (object):
             dataframes[subgroup] = pandas.DataFrame.from_dict (adict, orient='index').transpose()
         self._n_patient_queue_dataframe = dataframes
 
-    def _get_priority_class (self, apatient):
+    def _get_priority_class (self, apatient, is_positive):
         
         ''' Priority ranking in the with-CADt world:
                 1 if emergent patient
                 2 if AI positive 
                 99 if AI negative
-            
+            No interrupting or negative patients are expected when
+            calling this function from _AI_is_positive().
+                
             input
             -----
             apatient (patient): new patient instance
+            is_positive (bool): if the patient is flagged by any AIs
 
             output
             ------
@@ -1433,29 +1436,31 @@ class simulator (object):
                                   non-hierarchical queue
         '''
         
-        if apatient.is_interrupting: return self.classes['interrupting']
-        if apatient.is_positive: return self.classes['positive']
+        if is_positive: return self.classes['positive']
         return self.classes['negative']
 
-    def _get_hier_class (self, apatient, is_positives=None):
+    def _get_hier_class (self, apatient, is_positive, is_positives):
         
         ''' Hierarchical ranking in the with-CADt world + hierarchical classes:
                 1 if emergent patient
                 3 onwards for each unique disease
                 99 if AI negative
+            No interrupting or negative patients are expected when
+            calling this function from _AI_is_positive().
 
             input
             -----
             apatient (patient): new patient instance
+            is_positive (bool): if the patient is flagged by any AIs            
+            is_positives (dict): dictionary of all binary from all AIs
 
             output
             ------
             hier_class (int): priority rank (3 onwards) in a hierarchical queue            
         '''
         
-        if apatient.is_interrupting: return self.classes['interrupting']
         ## All AI-negative are assigned to the lowest class i.e. 99
-        if not apatient.is_positive: return self.classes['negative']
+        if not is_positive: return self.classes['negative']
         
         # For all AIs that flagged the patient positive, get the corresponding
         # disease number. Return the smallest number (highest priority) from this list. 
@@ -1508,7 +1513,7 @@ class simulator (object):
         # This patient is positive if any of the AI gives positive
         is_positive = numpy.array (list (is_positives.values())).any()
         # priority classes
-        prior_class = self._get_priority_class (apatient)
+        prior_class = self._get_priority_class (apatient, is_positive)
         hier_class = self._get_hier_class (apatient, is_positives)
 
         return is_positives, is_positive, prior_class, hier_class

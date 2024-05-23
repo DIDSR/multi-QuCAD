@@ -43,7 +43,7 @@ def get_hi_lo_AIs(dis_withAI_hierarchy, ven_hierarchy, disease_in):
     return two lists of AI: hi and lo -- these lists will be used to compute equivalent AIs.
     e.g, for chosen disease B and hierarchy A>B>C>D, hi : [A] and lo: [A, B]'''
     
-    idx = dis_withAI_hierarchy.index(disease_in)
+    idx = list (dis_withAI_hierarchy).index(disease_in)
     hi_AIs = ven_hierarchy[:idx]
     lo_AIs = ven_hierarchy[:idx+1]
     return hi_AIs, lo_AIs
@@ -160,7 +160,7 @@ def get_new_params(new_params): # do only if equivalent AIs and disease probs ar
     
     return new_params
 
-def update_disease_names(new_params):
+def update_disease_names(new_params, groups_wAI):
     '''This function only updates disease and group names for consistency in names in the theoretical calculations. 
     Note only one AI is expected. This function replaces the group name by 'GroupEQ' and disease name by 'Z'.
     This is called when only one disease group is present in the list of hi_AIs.
@@ -172,20 +172,35 @@ def update_disease_names(new_params):
 
     # 1. Update AIinfo
     new_AIinfo = {'Vendor0': {'groupName': 'GroupEQ', 'targetDisease': 'Z', 'TPFThresh': new_params['AIinfo'][vendor]['TPFThresh'], 'FPFThresh': new_params['AIinfo'][vendor]['FPFThresh'], 'rocFile': new_params['AIinfo'][vendor]['rocFile']}}
-    new_params['AIinfo'] = new_AIinfo
 
     # 2. Update disease group names
-    new_diseaseGroup = {'GroupEQ': {'diseaseNames': ['Z'], 'diseaseProbs': [new_params['diseaseGroups'][gp]['diseaseProbs'][0]], 
+    new_diseaseGroup = {'GroupEQ': {'diseaseNames': ['Z'], 'diseaseRanks':[1],'diseaseProbs': [new_params['diseaseGroups'][gp]['diseaseProbs'][0]], 
                                     'groupProb': new_params['diseaseGroups'][gp]['groupProb']}}
+
+    # 3. Update meanServiceTime
+    new_meanServiceTimes = {}
+    new_meanServiceTimes['interrupting'] = new_params['meanServiceTimes']['interrupting']
+    for groupname in new_params['diseaseGroups'].keys():
+        if not groupname in new_params['meanServiceTimes']: continue
+        new_meanServiceTimes[groupname] = new_params['meanServiceTimes'][groupname] 
+    
+    #defaultServiceTime = new_params['meanServiceTimes'][groups_wAI[0]]['non-diseased'] 
+
+    TDZ, TNDZ = get_eqvt_readtime (new_params['meanServiceTimes'], new_params['diseaseGroups'], new_params['AIinfo'], groups_wAI)
+    new_meanServiceTimes['GroupEQ'] = {'Z': TDZ, 'non-diseased': TNDZ}
+    del new_params['meanServiceTimes'][gp]
+    new_params['meanServiceTimes'].update(new_meanServiceTimes)
+
+    #defaultServiceTime = new_params['meanServiceTimes'][gp]['non-diseased'] # This will change if mu_d != mu_nd.
+    #new_meanServiceTimes = {'GroupEQ': {'Z': defaultServiceTime, 'non-diseased': defaultServiceTime}}
+    #del new_params['meanServiceTimes'][gp]
+    #new_params['meanServiceTimes'].update(new_meanServiceTimes)
+
+    new_params['AIinfo'] = new_AIinfo
     del new_params['diseaseGroups'][gp]
     new_params['diseaseGroups'].update(new_diseaseGroup)
 
-    # 3. Update meanServiceTime
-    defaultServiceTime = new_params['meanServiceTimes'][gp]['non-diseased'] # This will change if mu_d != mu_nd.
-    new_meanServiceTimes = {'GroupEQ': {'Z': defaultServiceTime, 'non-diseased': defaultServiceTime}}
-    del new_params['meanServiceTimes'][gp]
-    new_params['meanServiceTimes'].update(new_meanServiceTimes)
-    
+
     return new_params
 
 def get_all_params(config_file_in, keep_ai='all', create_EQgrps = False):
@@ -286,7 +301,7 @@ def get_eqvt_readtime (meanServiceTimes, diseaseGroups, AIinfo, groups_wAI):
 
     return TZ, TNZ
 
-def get_new_params_elim(new_params): # do only if equivalent AIs and disease probs are needed for >1 AI/disease
+def get_new_params_elim(new_params,groups_wAI, groups_noAI): # do only if equivalent AIs and disease probs are needed for >1 AI/disease
     
     '''Compute and return params after creating equivalent AIs from multiple AIs. 
     Equivalent Se, Sp and disease group probabilities are computed.
@@ -297,8 +312,8 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
     
     # Get groups with and without AI. 
     #groups_wAI = [new_params['AIinfo'][ii]['groupName'] for ii in new_params['AIinfo'].keys()] # Groups with AI
-    groups_wAI = [aiinfo['groupName'] for _, aiinfo in new_params['AIinfo'].items()]
-    groups_noAI = list(set(new_params['diseaseGroups'].keys()) - set(groups_wAI)) # Groups with no AI
+    #groups_wAI = [aiinfo['groupName'] for _, aiinfo in new_params['AIinfo'].items()]
+    #groups_noAI = list(set(new_params['diseaseGroups'].keys()) - set(groups_wAI)) # Groups with no AI
     
     # Compute equivalent group prob after combining all unique groups with AI.
     #unique_gp_probs = [new_params['diseaseGroups'][ii]['groupProb'] for ii in list(set(groups_wAI))]
@@ -374,7 +389,7 @@ def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
     2. get params after combining multiple AIs (keep_ai is the list of AIs to be combined) OR
     3. get params for a single AI/ disease for use in theoretical calculations.'''
     params_out = deepcopy (paramsOri) #inputHandler.read_args(config_file_in, False)
-    
+
     if keep_ai is not 'all':
         num_ais = len(keep_ai)
         new_AIinfo = {} 
@@ -382,12 +397,15 @@ def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
             new_AIinfo.update({key: params_out['AIinfo'][key] for key in params_out['AIinfo'] if key == this_ai}) 
         params_out['AIinfo'] = new_AIinfo
     
+    groups_wAI = [aiinfo['groupName'] for _, aiinfo in params_out['AIinfo'].items()]
+    groups_noAI = list(set(params_out['diseaseGroups'].keys()) - set(groups_wAI)) # Groups with no AI
+
     # For theory, this function may be called to create equivalent groups, either by combining AIs
     # or as a dummy case with a single AI
     if create_EQgrps and num_ais > 1: 
-        params_out = get_new_params_elim(params_out)
+        params_out = get_new_params_elim(params_out, groups_wAI, groups_noAI)
     elif create_EQgrps and num_ais == 1:
-        params_out = update_disease_names(params_out)
+        params_out = update_disease_names(params_out, groups_wAI)
         
     # Create an AI object
     #AIs_out = {AIname:create_AI (AIname, AIinfo, doPlots=params_out['doPlots'], plotPath=params_out['plotPath'])
@@ -550,7 +568,7 @@ disease_hierarchy = hier.diseaseNames
 
 #vendor_hierarchy =  list(params['AIinfo'].keys())
 ## Now based on disease rank provided by user
-vendor_hierarchy = hier.AINames ## could be None if no AI for that disease condition
+vendor_hierarchy = hier.AINames[hier.AINames!=None] ## could be None if no AI for that disease condition
 
 #print('vendor_hierarchy', vendor_hierarchy)
 #num_trials = inputHandler.num_trials
@@ -558,6 +576,7 @@ vendor_hierarchy = hier.AINames ## could be None if no AI for that disease condi
 
 # Compute other matched inputs. 
 #diseases_with_AI = [params['AIinfo'][ii]['targetDisease'] for ii in vendor_hierarchy]
+diseases_with_AI = hier.diseaseNames[hier.AINames!=None]
 #  aDiseaseTree.diseaseRanked
 #AI_group_hierarchy = [params['AIinfo'][ii]['groupName'] for ii in vendor_hierarchy]
 # 
@@ -637,19 +656,20 @@ for chosen_dis, chosen_gp in zip(disease_hierarchy, matched_group_hierarchy):
     print('sim mean', chosen_dis, np.mean(all_trial_mean))
    
     if chosen_dis in diseases_with_AI:
-        chosen_AI = vendor_hierarchy[diseases_with_AI.index(chosen_dis)]
+        #chosen_AI = vendor_hierarchy[diseases_with_AI.index(chosen_dis)]
+        chosen_AI = [ainame for ainame, aiinfo in params['AIinfo'].items() if aiinfo['targetDisease']==chosen_dis][0]
         
         # 3. Generate AI lists and corresponding parameters for hi and lo cases. 
         keep_HiAIs, keep_LoAIs = get_hi_lo_AIs(diseases_with_AI, vendor_hierarchy, chosen_dis)
 
         if keep_HiAIs:
-            params_hi, aDiseaseTree_hi, AIs_hi = get_all_params(configFile, keep_ai = keep_HiAIs, create_EQgrps = True)
+            params_hi, aDiseaseTree_hi, AIs_hi = get_all_params_elim(params, keep_ai = keep_HiAIs, create_EQgrps = True)
             params_hi['SeThresh'] = list(params_hi['SeThreshs'].values())[0]
             params_hi['SpThresh'] = list(params_hi['SpThreshs'].values())[0]
         else:
             params_hi = None
 
-        params_lo, aDiseaseTree_lo, AIs_lo = get_all_params(configFile, keep_ai = keep_LoAIs, create_EQgrps = True)
+        params_lo, aDiseaseTree_lo, AIs_lo = get_all_params_elim(params, keep_ai = keep_LoAIs, create_EQgrps = True)
         params_lo['SeThresh'] = list(params_lo['SeThreshs'].values())[0]
         params_lo['SpThresh'] = list(params_lo['SpThreshs'].values())[0]
 
