@@ -1514,7 +1514,7 @@ class simulator (object):
         is_positive = numpy.array (list (is_positives.values())).any()
         # priority classes
         prior_class = self._get_priority_class (apatient, is_positive)
-        hier_class = self._get_hier_class (apatient, is_positives)
+        hier_class = self._get_hier_class (apatient, is_positive, is_positives)
 
         return is_positives, is_positive, prior_class, hier_class
 
