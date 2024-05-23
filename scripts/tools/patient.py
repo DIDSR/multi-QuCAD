@@ -159,7 +159,8 @@ class patient (object):
 
         if self.is_positive is not None:
             summary += '|   * Is positive   ? {0}\n'.format (self.is_positive)
-        summary += '|   * Priority class? {0}\n'.format (self.priority_class)
+        summary += '|   * Preresume priority class? {0}\n'.format (self.priority_class)
+        summary += '|   * Hierarchical priority class? {0}\n'.format (self.hierarchy_class)
         summary += '|  Time stamp ...\n'
         summary += self._print_summary_line ('Arrived at', self.trigger_time)
         for time in self.open_times:
