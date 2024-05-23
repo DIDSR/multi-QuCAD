@@ -59,14 +59,19 @@ meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in min
 
 GroupCTA
 groupProb                      0.3
-disease                        A   1   0.1   10
-disease                        B   2   0.07  10
-meanServiceTimeNonDiseasedMin  10
+disease                        A   1   0.1   5
+disease                        B   2   0.07  3
+meanServiceTimeNonDiseasedMin  7
 
 GroupCX
-groupProb                      0.7
-disease                        C   3   0.15  10
-meanServiceTimeNonDiseasedMin  10
+groupProb                      0.5
+disease                        C   3   0.15  3
+meanServiceTimeNonDiseasedMin  5
+
+GroupXR
+groupProb                      0.2
+disease                        D   4   0.05  1
+meanServiceTimeNonDiseasedMin  2
 
 ################################################
 ## CADt AI diagnostic performance
@@ -112,8 +117,8 @@ rocFile       None
 ################################################
 ## Simulation setting
 ################################################
-nTrials         10                           # Number of trials to perform
-nPatientsTarget 20000                        # Number of targeted patient images
+nTrials         1                            # Number of trials to perform
+nPatientsTarget 30000                        # Number of targeted patient images
 verbose         True                         # False to turn off all printouts
 statsFile       ../outputs/stats/stats.p     # Pickled file with the parameters and simulation results
 runTimeFile     ../outputs/stats/runTime.txt # Text file showing runtime performance

@@ -48,28 +48,48 @@ def get_hi_lo_AIs(dis_withAI_hierarchy, ven_hierarchy, disease_in):
     lo_AIs = ven_hierarchy[:idx+1]
     return hi_AIs, lo_AIs
 
-def get_eqvt_se_sp(se_array, sp_array, all_pop_d_prevalence):
+def get_eqvt_se_sp(se_array, sp_array, all_pop_d_prevalence, all_groupProbs):
     '''Compute equivalent sensitivity and specificity from 
     the lists of Se and Sp corresponding to the AIs to be combined.
     Note: This function is only valid if disease groups for all AIs are independent.'''
     # This should be 1 - sum of all disease prevalence
     #all_pop_nd_prevalence = 1 - all_pop_d_prevalence # array of non-diseased fractions
-    all_pop_nd_prevalence = 1 - np.sum (all_pop_d_prevalence)
+    all_pop_nd_prevalence = 1 - np.sum (all_pop_d_prevalence)/np.sum (all_groupProbs)
 
     ## If only 1 AI in each group, e.g. GroupCTA has disease A & B with 1 AIa looking for A and
     ##                                  GroupCX  has disease C with 1 AIc looking for C
+    ##                                  GroupXR  has disease D with no AI
+    ## And we are interested in [GroupCTA and GroupCX] (high periority) vs GroupXR (low-priority)
     ##
     ##       #A+byAIa + #C+byAIc     #A+byAIa/#A * #A/N + #C+byAIc/#C * #C/N      SeA * piA + SeC * piC
     ## Se = --------------------- = ------------------------------------------ = -----------------------
     ##             #A + #C                         #A/N + #C/N                          piA + piC
     ## If multiple AIs in each group, e.g. GroupCTA also has AIb looking for B, then the
     ## numerator needs to include cases with AIa falsely flagged B-diseased cases and vice versa.
-    eqvt_se = np.sum(se_array * all_pop_d_prevalence) / np.sum(all_pop_d_prevalence)
+    #eqvt_se = np.sum(se_array * all_pop_d_prevalence) / np.sum(all_pop_d_prevalence)
+    eqvt_se = np.sum ([ se_array[i] * all_pop_d_prevalence[i]/all_groupProbs[i] * all_groupProbs[i]/np.sum (all_groupProbs) for i in range (len (se_array))])
+    eqvt_se /= np.sum (all_pop_d_prevalence)/np.sum (all_groupProbs)
 
-    ## This Sp follows similar logic. Note that accidentally flagged cases diseased with B
-    ## by AIa is counted as FP in this definition.
+    ## For Sp, the "ND"-equivalent are the truly non-diseased patients *and* the conditions that
+    ## no AI looks for.
     # Rucha's method is incorrect
     #eqvt_sp = np.sum(sp_array * all_pop_nd_prevalence) / np.sum(all_pop_nd_prevalence)
+
+    ## Again, this would only work if 1 AI in each group. N corresponds to the number of cases in
+    ## group CTA and CX (i.e. excluding cases GroupXR).
+    ##
+    ##       #(B and ND)-byAIa + #ND-byAIc     #(B and ND)-byAIa/#(B and ND) * #(B and ND)/#CTA * #CTA/N + #ND-byAIc/#ND * #ND/#CX * #CX/N 
+    ## Sp = ------------------------------- = ---------------------------------------------------------------------------------------------
+    ##                N - #A - #C                                                  1 - piA - piC
+    ##
+    ##       SpA * (1-piA) * groupProbCTA + SpC * (1-piC) * groupProbCX
+    ##    = ------------------------------------------------------------
+    ##                           1 - piA - piC
+    ##
+    ## where groupProbCTA, groupProbCX, piA and piC are with respect to number of cases in group
+    ## CTA and CX (groups that the AIs in high-priority are involved).
+    eqvt_sp = np.sum ([ sp_array[i] * (1-all_pop_d_prevalence[i]/all_groupProbs[i]) * all_groupProbs[i]/np.sum (all_groupProbs) for i in range (len (se_array))])
+    eqvt_sp /= all_pop_nd_prevalence
 
     return eqvt_se, eqvt_sp
 
@@ -222,13 +242,14 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
     
     # 1. Create an equivalent AI. Assumption: Diseases seen by AIs are uncorrelated!!!
     # 2. Create an equivalent group & the corresponding diseased probability. 
-#     Assumption: All diseases in a gp are uncorrelated.
-    all_se, all_sp, all_pop_prevalence = [], [], []
+    #     Assumption: All diseases in a gp are uncorrelated.
+    all_se, all_sp, all_pop_prevalence, all_groupProbs = [], [], [], []
 
     for vendor in new_params['AIinfo'].keys():
 
         all_se.append(new_params['AIinfo'][vendor]['TPFThresh'])
         all_sp.append(1 - new_params['AIinfo'][vendor]['FPFThresh'])
+        all_groupProbs.append (new_params['diseaseGroups'][new_params['AIinfo'][vendor]['groupName']]['groupProb'])
 
         dis = new_params['AIinfo'][vendor]['targetDisease']
         gp = new_params['AIinfo'][vendor]['groupName']
@@ -239,14 +260,15 @@ def get_new_params_elim(new_params): # do only if equivalent AIs and disease pro
         # Compute disease prevalence in population
         # Elim: bug fix; now corresponds to disease index
         #pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][0] * new_params['diseaseGroups'][gp]['groupProb']
-        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][dis_idx] * new_params['diseaseGroups'][gp]['groupProb']
+        pop_prev = new_params['diseaseGroups'][gp]['diseaseProbs'][dis_idx] * new_params['diseaseGroups'][gp]['groupProb'] 
         all_pop_prevalence.append(pop_prev)
 
     all_se = np.array(all_se)
     all_sp = np.array(all_sp)
-    all_pop_prevalence = np.array(all_pop_prevalence)
+    all_pop_prevalence = np.array(all_pop_prevalence) 
+    all_groupProbs = np.array (all_groupProbs)
 
-    EQSe, EQSp = get_eqvt_se_sp(all_se, all_sp, all_pop_prevalence)
+    EQSe, EQSp = get_eqvt_se_sp(all_se, all_sp, all_pop_prevalence, all_groupProbs)
     new_params['AIinfo'] = {'Vendor0': {'groupName': 'GroupEQ', 'targetDisease': 'Z', 'TPFThresh': EQSe, 'FPFThresh': 1-EQSp, 'rocFile': None}}
     
     disEQ_prob = np.sum(all_pop_prevalence) / gpEQ_prob # prob of diseased patients in the EQ group. Diseases are assumed to be uncorrelated, hence probs are summed.
