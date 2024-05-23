@@ -53,7 +53,7 @@ if __name__ == '__main__':
     trialGen.simulate_trials (AIs, aDiseaseTree)
     params['runTimeMin'] = (time.time() - t0)/60 # minutes
     print ('{0} trials took {1:.2f} minutes'.format (params['nTrials'], params['runTimeMin']))
-
+    
     ## Gather data for dict
     data = {'params':params,
             'lpatients':trialGen.n_patients_system_df,

@@ -391,7 +391,7 @@ def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
     params_out = deepcopy (paramsOri) #inputHandler.read_args(config_file_in, False)
 
     if keep_ai is not 'all':
-        num_ais = len(keep_ai)
+        #num_ais = len(keep_ai)
         new_AIinfo = {} 
         for this_ai in keep_ai:
             new_AIinfo.update({key: params_out['AIinfo'][key] for key in params_out['AIinfo'] if key == this_ai}) 
@@ -402,9 +402,9 @@ def get_all_params_elim(paramsOri, keep_ai='all', create_EQgrps = False):
 
     # For theory, this function may be called to create equivalent groups, either by combining AIs
     # or as a dummy case with a single AI
-    if create_EQgrps and num_ais > 1: 
+    if create_EQgrps and len (params_out['AIinfo']) > 1: 
         params_out = get_new_params_elim(params_out, groups_wAI, groups_noAI)
-    elif create_EQgrps and num_ais == 1:
+    elif create_EQgrps and len (params_out['AIinfo'])  == 1:
         params_out = update_disease_names(params_out, groups_wAI)
         
     # Create an AI object

@@ -1416,7 +1416,7 @@ class simulator (object):
             dataframes[subgroup] = pandas.DataFrame.from_dict (adict, orient='index').transpose()
         self._n_patient_queue_dataframe = dataframes
 
-    def _get_priority_class (self, apatient, is_positive):
+    def _get_priority_class (self, is_positive):
         
         ''' Priority ranking in the with-CADt world:
                 1 if emergent patient
@@ -1427,7 +1427,6 @@ class simulator (object):
                 
             input
             -----
-            apatient (patient): new patient instance
             is_positive (bool): if the patient is flagged by any AIs
 
             output
@@ -1439,7 +1438,7 @@ class simulator (object):
         if is_positive: return self.classes['positive']
         return self.classes['negative']
 
-    def _get_hier_class (self, apatient, is_positive, is_positives):
+    def _get_hier_class (self, is_positive, is_positives):
         
         ''' Hierarchical ranking in the with-CADt world + hierarchical classes:
                 1 if emergent patient
@@ -1450,7 +1449,6 @@ class simulator (object):
 
             input
             -----
-            apatient (patient): new patient instance
             is_positive (bool): if the patient is flagged by any AIs            
             is_positives (dict): dictionary of all binary from all AIs
 
@@ -1513,8 +1511,8 @@ class simulator (object):
         # This patient is positive if any of the AI gives positive
         is_positive = numpy.array (list (is_positives.values())).any()
         # priority classes
-        prior_class = self._get_priority_class (apatient, is_positive)
-        hier_class = self._get_hier_class (apatient, is_positive, is_positives)
+        prior_class = self._get_priority_class (is_positive)
+        hier_class = self._get_hier_class (is_positive, is_positives)
 
         return is_positives, is_positive, prior_class, hier_class
 

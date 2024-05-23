@@ -163,6 +163,11 @@ def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_
     return wait_times[-1], wait_times[chosen_dis_idx]
 
 
+#######################################################
+## Calculations for hierarchical queue
+#######################################################
+
+
 
 ########################################
 ## Classic queueing state probabilities

@@ -21,8 +21,7 @@ import numpy, pandas, os, argparse, sys
 from copy import deepcopy
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-#from calculator import get_theory_waitTime
-from . import diseaseTree, AI, hierarchy
+from . import diseaseTree, AI, hierarchy, calculator
 
 ################################
 ## Define constants
@@ -897,6 +896,32 @@ def create_hierarchy (diseaseDict, AIinfo):
     aHierarchy.build_hierarchy (diseaseDict, AIinfo)
     return aHierarchy
 
+def get_theory (params, aHierarchy):
+
+    groups_wAI = [aiinfo['groupName'] for _, aiinfo in params['AIinfo'].items()]
+    groups_noAI = list(set(params['diseaseGroups'].keys()) - set(groups_wAI))
+
+    ## For traditional preresume, create an equivalent group where all AIs are
+    ## considered as top priority. For FIFO, it wouldn't matter.
+    eqParams = aHierarchy.update_newParams (deepcopy (params), groups_wAI, groups_noAI) \
+                if len (params['AIinfo']) > 1 else \
+                aHierarchy.update_disease_names(deepcopy (params), groups_wAI)
+    eqParams['SeThresh'] = list(eqParams['SeThreshs'].values())[0]
+    eqParams['SpThresh'] = list(eqParams['SpThreshs'].values())[0]
+
+    theories = {}
+    for aclass in ['interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']:
+        theories[aclass] = {}
+        for variable in ['fifo', 'preresume', 'delta']:
+            key = 'waitTime_noCADt' if variable == 'fifo' else \
+                  'waitTime_withCADt_preresume' if variable == 'preresume' else \
+                  'waitTime_diff_preseume' 
+            theories[aclass][key] = calculator.get_theory_waitTime (aclass, variable, eqParams)
+    
+    theories['hierarchy'] = aHierarchy.predict_mean_wait_time (params)
+
+    return theories
+
 def add_params (params):
 
     ''' Function to add additional parameters from user inputs. This includes
@@ -973,16 +998,7 @@ def add_params (params):
     params['rhos'] = {key: params['lambdas'][key]/params['mus'][key]/params['nRadiologists']
                       for key in params['lambdas'].keys()}
 
-    
-
     ## Get theoretical waiting time and delta time (i.e. wait-time-saving)
-    #  Need more time to figure out how to theoretically predict wait-time in multi-AI/disease scenario
-    #params['theory'] = {}
-    #for aclass in ['interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']:
-    #    params['theory'][aclass] = {}
-    #    for variable in ['fifo', 'preresume', 'delta']:
-    #        key = 'waitTimeWithoutCADt' if variable == 'fifo' else \
-    #              'waitTimeWithCADt' if variable == 'preresume' else 'waitTimeSaving'
-    #        params['theory'][aclass][key] = get_theory_waitTime (aclass, variable, params)    
+    #params['theory'] = get_theory (params, aHierarchy) 
 
     return params, AIs, aDiseaseTree
