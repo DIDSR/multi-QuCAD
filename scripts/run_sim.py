@@ -76,8 +76,9 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
     ## Add in sim_delta and theory_delta 
     adict['sim_delta'] = adict['sim_waittime'] - adict['sim_waittime'][0]
     adict['theory_delta'] = adict['theory_waittime'] - adict['theory_waittime'][0]
+    adict['columns'] = rows
 
-    return pandas.DataFrame (adict)
+    return pandas.DataFrame (adict).set_index ('columns')
 
 ################################
 ## Script starts here!
