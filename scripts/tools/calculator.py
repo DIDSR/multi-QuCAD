@@ -140,7 +140,7 @@ def get_theory_waitTime (params, aHierarchy):
             theories['preresume'][disease] = theories['preresume']['negative']
     
     ## For hierarchy, no interrupting class at all
-    theories['hierarchy'] = aHierarchy.predict_mean_wait_time (params)
+    theories['hierarchical'] = aHierarchy.predict_mean_wait_time (params)
 
     return theories
 
