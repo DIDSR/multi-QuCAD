@@ -76,26 +76,31 @@ meanServiceTimeNonDiseasedMin  5
 ## CADt AI diagnostic performance
 ################################################
 ##
-## Each block includes information of 1 AI. For a CADt device that identifies multiple conditions, it should
-## be broken down into 2 AIs each for one condition.
+## Each block includes information of 1 AI. For a CADt device that identifies multiple
+## conditions, it should be broken down into 2 AIs each for one condition.
 ##
 ## Each block has 6 lines:
 ## Line 1: AI name (provided by the user)
-## Line 2: The name of the group in which this AI will analyze all the images. This line must start with
-##         "groupName" followed by the group name (defined above) provided by the user.
-## Line 3: The disease within this group that the AI is trained to identify. This line must start with
-##         "targetDisease" followed by the disease name (defined above) provided by the user.
-## Line 4: True-positive fraction (TPF) of operating point of the AI i.e. sensitivity. This line must
-##         start with "TPFThresh" followed by a value (between 0 and 1) provided by the user.
-## Line 5: False-positive fraction (FPF) of operating point of the AI i.e. 1-specificity. This line must
-##         start with "FPFThresh" followed by a value (between 0 and 1) provided by the user. If using
-##         an input ROC curve, set this to `None` (not recommended).
-## Line 6: Path to a text file with an imperical ROC curve (e.g. `../inputs/exampleROC.dat`). This line
-##         must start with "rocFile" followed by the path provided by the user. In this file, the first
-##         column is the false-positive fraction (x-axis in the ROC curve), and the second column is the
-##         true-positive fraction (y-axis in the ROC curve). A bi-normal distribution is assumed to
-##         parametrize the imperical ROC curve. The FPFThresh of the AI operating point will be based on
-##         the TPFThresh (i.e. find the x-value of the ROC curve given the y-value). If using a user-
+## Line 2: The name of the group in which this AI will analyze all the images. This
+##         line must start with "groupName" followed by the group name (defined above)
+##         provided by the user.
+## Line 3: The disease within this group that the AI is trained to identify. This line
+##         must start with "targetDisease" followed by the disease name (defined above)
+##         provided by the user.
+## Line 4: True-positive fraction (TPF) of operating point of the AI i.e. sensitivity.
+##         This line must start with "TPFThresh" followed by a value (between 0 and 1)
+##         provided by the user.
+## Line 5: False-positive fraction (FPF) of operating point of the AI i.e. 1-specificity.
+##         This line must start with "FPFThresh" followed by a value (between 0 and 1)
+##         provided by the user. If using an input ROC curve, set this to `None` (not
+##         recommended).
+## Line 6: Path to a text file with an imperical ROC curve (e.g. `../inputs/exampleROC.dat`).
+##         This line must start with "rocFile" followed by the path provided by the user.
+##         In this file, the first column is the false-positive fraction (x-axis in the ROC
+##         curve), and the second column is the true-positive fraction (y-axis in the ROC
+##         curve). A bi-normal distribution is assumed to parametrize the imperical ROC
+##         curve. The FPFThresh of the AI operating point will be based on the TPFThresh
+##         (i.e. find the x-value of the ROC curve given the y-value). If using a user-
 ##         specified TPFThresh, set this to `None` (recommended).
 ##
 
