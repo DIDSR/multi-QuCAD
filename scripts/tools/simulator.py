@@ -44,7 +44,11 @@
 ##
 ## 05/21/2024
 ## ----------
-## * Clean up for hierarchical & non-preemptive queue  
+## * Clean up for hierarchical queue
+##
+## 05/24/2024
+## ----------
+## * Added is_preemptive flag
 ###########################################################################
 
 ################################
@@ -164,6 +168,7 @@ class simulator (object):
         self._fractionED = None                    # fraction of emergent patient in all patients
         self._arrivalRate = None                   # overall patient arrival rate regardless of subgroups 
         self._serviceTimes = None                  # mean reading time by interrupting, diseased, and non-diseased
+        self._isPreemptive = True                  # priority queue type: is it preemptive? Default True
         
     ## +----------------------------------------
     ## | Class properties
@@ -266,6 +271,13 @@ class simulator (object):
         if not isinstance (nRadiologists, int):
             raise IOError ('Input nRadiologists must be an integer.')        
         self._nRadiologists = nRadiologists
+    @property
+    def isPreemptive (self): return self._isPreemptive
+    @isPreemptive.setter
+    def isPreemptive (self, isPreemptive):
+        if not isinstance (isPreemptive, bool):
+            raise IOError ('Input isPreemptive must be a boolean.')        
+        self._isPreemptive = isPreemptive        
     @property
     def track_log (self): return self._track_log
     @track_log.setter
@@ -1573,6 +1585,7 @@ class simulator (object):
         self.nPatientPadsStart = params['nPatientsPads'][0]
         self.nPatientPadsEnd = params['nPatientsPads'][1]
         self.hierDict = params['hierDict']
+        self.isPreemptive = params['isPreemptive']
 
     def simulate_queue (self, AIs, aDiseaseTree):
         
@@ -1611,9 +1624,9 @@ class simulator (object):
                 # Update future patients - this is when the new arrival(s) actally arrives
                 self._future_patients[qtype] = self._put_future_patients_in_queue (qtype, drTime,
                                                                                    self._future_patients[qtype])            
-                # Check if any interruption due to the new arrival.
+                # For preemptive queue, check if any interruption due to the new arrival.
                 # If a doctor is interrupted, read the latest (high priority) 
-                self._read_newest_urgent_patient (qtype, apatient)
+                if self.isPreemptive: self._read_newest_urgent_patient (qtype, apatient)
         
             # +-------------------------------
             # | New customer *will* arrive
