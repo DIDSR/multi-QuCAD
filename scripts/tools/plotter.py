@@ -179,164 +179,118 @@ def get_stats (values, weights=None):
     
     return stat
 
-def plot_n_patient_distributions (ext, sim_nPatients, stats, params, oneTrial=False):
-
-    ''' Function to plot distributions of the observed number of patients in
-        the system *right before a new patient arrives*.
+def plot_n_patient_distribution (axis, npatients, aclass, params, qtype, doLogY=True):
+    
+    ''' Function to plot the top subplot i.e. n patient distribution. 
 
         inputs
         ------
-        ext (str): extension of output file name
-        sim_nPatients (pandas DataFrame): observed number of patients in system for every patient
-                                          typically `trialGen.n_patients_system_df`
-        stats (dict): mean, lower/upper 1 sigma and 95% C.I. 
-                      typically `trialGen.n_patients_system_stats`
-        params (dict): settings for all simulations
-        oneTrial (bool): If true, plot one random trial instance
-    '''
+        axis (plt.axis): where data will be plotted
+        npatients (): 
+        aclass (str): either 'interrupting', 'non-interrupting', 'positive', 'negative'
+        params (dict): all parameters related to user settings
+        qtype (str): either 'fifo' and 'preresume'
+        doLogY (bool): if true, y-axis will be in log scale.
 
-    ## Show one random trial
-    if oneTrial:
-        ## Obtain a random trial ID
-        allTrialIDs = sim_nPatients['non-interrupting']['trial_id']
-        randonInteger = numpy.random.randint (0, len (allTrialIDs))
-        trial_id = allTrialIDs[randonInteger]
-        ## Extract the patients from that one ID
-        sim_nPatients = {gtype: df[df.trial_id==trial_id] for gtype, df in sim_nPatients.items()}
-    
-    ## 1. Plot # patients in system without CADt when a new patient enters
-    ##    Priority classes: interrupting (not in reading list) and interruted (in reading list)
-    outFile = params['plotPath'] + 'n_patients_system_distribution_without_CADt' + ext
-    plot_n_patient_distribution_total (outFile, sim_nPatients, stats, params, doLogY=True)
-
-    ## 2. Plot # patients in system with CADt when a new patient enters
-    ##    Priority classes: interrupting (not in reading list) and AI positive and AI negative in reading list
-    outFile = params['plotPath'] + 'n_patients_system_distribution_with_CADt' + ext
-    plot_n_patient_distribution_classes (outFile, sim_nPatients, stats, params, doLogY=True)
-    
-def plot_n_patient_distribution_total (outFile, nPatients, stats, params, doLogY=True):
-    
-    ''' Function to plot distributions of the observed number of patients in
-        the system *right before a new patient arrives* without CADt.
-
-        inputs
+        output
         ------
-        outFile (str): output plot file name
-        nPatients (pandas DataFrame): observed number of patients in system for every patient
-                                      typically `trialGen.n_patients_system_df`
-        stats (dict): mean, lower/upper 1 sigma and 95% C.I. 
-                      typically `trialGen.n_patients_system_stats`
-        params (dict): settings for all simulations
-        doLogY (bool): If true, plot log y
+        xticks (array): same xtick values as the distribution plot
     '''
 
-    ## 2 plots: interrupting (outside of reading list) and interrupted (in reading list)
-    h  = plt.figure (figsize=(16, 6))
-    gs = gridspec.GridSpec (1, 2, wspace=0.4, hspace=0.4)
-    
-    for index, aclass in enumerate (['interrupting', 'non-interrupting']):
+    ## Set up subplots and xticks
+    hist_bins = numpy.linspace (0, npatients.max(), int (npatients.max()+1))
+    xticks = hist_bins[::2] if max (npatients) < 30 else \
+             hist_bins[::4] if max (npatients) < 70 else \
+             hist_bins[::8] if max (npatients) < 200 else \
+             hist_bins[::16] if max (npatients) < 300 else hist_bins[::32]
 
-        ## Skip the plot for interrupting class if fractionED = 0 i.e. no interrupting patients
-        if round (params['fractionED'],4) == 0 and aclass == 'interrupting': continue
-
-        ## Set up subplots and xticks
-        subgs = gs[index].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.05)
-        values = nPatients[aclass]['fifo']
-        hist_bins = numpy.linspace (0, values.max(), int (values.max()+1))
-        xticks = hist_bins[::2] if max (values) < 30 else \
-                 hist_bins[::4] if max (values) < 70 else \
-                 hist_bins[::8] if max (values) < 200 else \
-                 hist_bins[::16] if max (values) < 300 else hist_bins[::32]
-         
-        ## Top plot: distributions
-        axis = h.add_subplot (subgs[0])
-        #  Simulation
-        hist, edges = numpy.histogram (values, bins=hist_bins)
-        hist_sum = numpy.sum (hist)
-        hist = numpy.r_[hist[0], hist]
-        yvalues = hist/hist_sum
-        axis.plot (edges[:-1], yvalues[1:], label='sim', color=colors['simulation'], drawstyle='steps-mid',
-                   linestyle='-', linewidth=2.0, alpha=0.6)
-        yvalues = hist[1:]/hist_sum
-        yerrors = numpy.sqrt (hist[1:])/hist_sum
-        axis.errorbar (edges[:-1], yvalues, marker=None, color=colors['simulation'], yerr=yerrors,
-                       elinewidth=1.5, alpha=0.5, ecolor=colors['simulation'], linestyle='')
-        # Theory
-        if aclass == 'interrupting':          
-            pred = calculator.get_state_pdf_MMn (hist_bins, params['nRadiologists'],
-                                                 params['lambdas']['interrupting'],
-                                                 params['mus']['interrupting'])
-            xvalues, yvalues = edges, pred
-        else: 
-            cal = calculator.def_cal_MMs (params, lowPriority='non-interrupting',
-                                          doDynamic=params['nRadiologists']>3)
-            pred = cal.solve_prob_distributions (len (hist_bins))
-            ps = numpy.array ([numpy.sum (p) for p in pred])
-            xvalues, yvalues = range (0, len (ps)), ps
+    #  Simulation
+    hist, edges = numpy.histogram (npatients, bins=hist_bins)
+    hist_sum = numpy.sum (hist)
+    hist = numpy.r_[hist[0], hist]
+    yvalues = hist/hist_sum
+    axis.plot (edges[:-1], yvalues[1:], label='sim', color=colors['simulation'], drawstyle='steps-mid',
+                linestyle='-', linewidth=2.0, alpha=0.6)
+    yvalues = hist[1:]/hist_sum
+    yerrors = numpy.sqrt (hist[1:])/hist_sum
+    axis.errorbar (edges[:-1], yvalues, marker=None, color=colors['simulation'], yerr=yerrors,
+                    elinewidth=1.5, alpha=0.5, ecolor=colors['simulation'], linestyle='')
+    #  Theory
+    xvalues, yvalues = calculator.get_theory_qlength_fifo_preresume (aclass, qtype, params)
+    if yvalues is not None:
         axis.plot (xvalues, yvalues, label='theory', color=colors['theory'], linestyle='--', linewidth=2.0, alpha=0.7)
-        
-        # Format x-axis
-        axis.set_xlim (hist_bins[0], hist_bins[-1])
-        axis.set_xticks (xticks)
-        axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
-        for xtick in axis.get_xticks():
-            axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
-        axis.get_xaxis().set_ticks([])
-        # Format y-axis
-        if doLogY: axis.set_yscale("log")
-        axis.set_ylim (min (hist/hist_sum), max (hist/hist_sum) + 0.05)        
-        axis.set_ylabel ('Normalized counts', fontsize=9)
-        for ytick in axis.get_yticks():
-            axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
-        # Format others
-        axis.legend (loc='best', ncol=1, prop={'size':9})
-        axis.set_title ('Without CADt; {0}'.format (aclass), fontsize=9)
+                            
+    # Format x-axis
+    axis.set_xlim (xticks[0], xticks[-1])
+    axis.set_xticks (xticks)
+    axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
+    for xtick in axis.get_xticks():
+        axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    axis.get_xaxis().set_ticks([])
+    # Format y-axis
+    if doLogY: axis.set_yscale("log")
+    axis.set_ylim (min (hist/hist_sum), max (hist/hist_sum) + 0.05)
+    axis.set_ylabel ('Normalized counts', fontsize=9)
+    for ytick in axis.get_yticks():
+        axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    # Format others
+    axis.legend (loc='best', ncol=1, prop={'size':9})
+    if qtype == 'fifo': qtype = 'Without CADt '
+    if qtype == 'preresume': qtype = 'With CADt (preresume) '
+    axis.set_title (qtype + aclass, fontsize=9)
 
-        ## Bottom plot: mean/95CI
-        axis = h.add_subplot (subgs[1])
-        #  Simulation
-        xlower = [stats['fifo'][aclass]['mean'] - stats['fifo'][aclass]['lower_95cl']]
-        xupper = [stats['fifo'][aclass]['upper_95cl'] - stats['fifo'][aclass]['mean']]
-        axis.errorbar (stats['fifo'][aclass]['mean'], 1, marker="x", markersize=10, color=colors['simulation'],
-                       xerr=[xlower, xupper], elinewidth=3, alpha=0.8, ecolor=colors['simulation'], linestyle='')
-        #  Theory
-        if aclass == 'interrupting':
-            pred = calculator.get_state_pdf_MMn (numpy.linspace (0, 1000, 1001), params['nRadiologists'],
-                                                 params['lambdas']['interrupting'],
-                                                 params['mus']['interrupting'])
-        else:
-            cal = calculator.def_cal_MMs (params, lowPriority='non-interrupting',
-                                          doDynamic=params['nRadiologists']>3)
-            pred = cal.solve_prob_distributions (1001)
-            pred = numpy.array ([numpy.sum (p) for p in pred])
-        theoryStats = get_stats (numpy.linspace (0, 1000, 1001), pred)
+    return xticks
+
+def plot_n_patient_stats (axis, xticks, substats, aclass, params, qtype):
+    
+    ''' Function to plot the bottom subplot i.e. mean and 95% range of n patient
+        distribution. 
+
+        inputs
+        ------
+        axis (plt.axis): where data will be plotted
+        xticks (array): same xtick values as the distribution plot
+        substats (dict): stats of n patients for this class and this queue type
+        aclass (str): either 'interrupting', 'non-interrupting', 'positive', 'negative'
+        params (dict): all parameters related to user settings
+        qtype (str): either 'fifo' and 'preresume'
+    '''
+
+    #  Simulation
+    xlower = [substats['mean'] - substats['lower_95cl']]
+    xupper = [substats['upper_95cl'] - substats['mean']]
+    axis.errorbar (substats['mean'], 1, marker="x", markersize=10, color=colors['simulation'],
+                    xerr=[xlower, xupper], elinewidth=3, alpha=0.8, ecolor=colors['simulation'], linestyle='')
+    
+    ## Theory
+    xvalues, yvalues = calculator.get_theory_qlength_fifo_preresume (aclass, qtype, params)
+    if yvalues is not None:
+        theoryStats = get_stats (xvalues, yvalues)
         xlower = [theoryStats['mean'] - theoryStats['lower_95cl']]
         xupper = [theoryStats['upper_95cl'] - theoryStats['mean']]
         axis.errorbar (theoryStats['mean'], 2, marker="x", color=colors['theory'], markersize=10,
                        xerr=[xlower, xupper], elinewidth=3, alpha=0.8, ecolor=colors['theory'], linestyle='')
-        
-        # Format x-axis
-        axis.set_xlim (hist_bins[0], hist_bins[-1])
-        axis.set_xlabel ('number of patients ({0} class only)'.format (aclass), fontsize=9)
-        axis.set_xticks (xticks)
-        axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
-        for xtick in axis.get_xticks():
-            axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
-        # Format y-axis
-        axis.set_ylim ([0, 3])
-        axis.set_yticks ([1, 2])
-        axis.set_yticklabels ([r'sim (95%)', r'theory (95%)'], fontsize=7)
-        for ytick in axis.get_yticks():
-            axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
 
-    plt.suptitle ('number of total patients in system per class', fontsize=10)
-    h.savefig (outFile)
-    plt.close('all')
+    # Format x-axis
+    axis.set_xlim (xticks[0], xticks[-1])
+    axis.set_xlabel ('number of patients ({0} class only)'.format (aclass), fontsize=9)
+    axis.set_xticks (xticks)
+    axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
+    for xtick in axis.get_xticks():
+        axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
+    # Format y-axis
+    axis.set_ylim ([0, 3])
+    axis.set_yticks ([1, 2])
+    axis.set_yticklabels ([r'sim (95%)', r'theory (95%)'], fontsize=7)
+    for ytick in axis.get_yticks():
+        axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
 
-def plot_n_patient_distribution_classes (outFile, nPatients, stats, params, doLogY=True):
+def plot_n_patient_distributions (outFile, nPatients, stats, params):
 
     ''' Function to plot distributions of the observed number of patients in
-        the system *right before a new patient arrives* with CADt.
+        the system *right before a new patient arrives* with CADt. Top row
+        is without CADt (interrupting and non-interrupting). Last row is
+        with CADt preresume queue (interrupting, positive, and negative).
 
         inputs
         ------
@@ -346,141 +300,32 @@ def plot_n_patient_distribution_classes (outFile, nPatients, stats, params, doLo
         stats (dict): mean, lower/upper 1 sigma and 95% C.I. 
                       typically `trialGen.n_patients_system_stats`
         params (dict): settings for all simulations
-        doLogY (bool): If true, plot log y
     '''
 
     ## 3 plots (all pre-resume): interrupting, Positive, Negative
-    h  = plt.figure (figsize=(25, 6))
-    gs = gridspec.GridSpec (1, 3, wspace=0.4, hspace=0.4)
+    h  = plt.figure (figsize=(25, 12))
+    gs = gridspec.GridSpec (2, 3, wspace=0.4, hspace=0.4)
 
-    for index, aclass in enumerate (['interrupting', 'positive', 'negative']):
-
-        ## Skip the plot for interrupting class if fractionED = 0 i.e. no interrupting patients
-        if round (params['fractionED'],4) == 0 and aclass == 'interrupting': continue
-        ## Skip the plot for positive if Se is 0 i.e. all are classified as AI negative
-        if params['TPFThresh'] == 0 and aclass == 'positive': continue
-        ## Skip the plot for negative if Sp is 0 i.e. all are classified as AI positive
-        if params['TPFThresh'] == 1 and aclass == 'negative': continue        
-
-        ## Set up subplots and xticks
-        subgs = gs[index].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.05)
-        values = nPatients[aclass]['preresume']
-        hist_bins = numpy.linspace (0, values.max(), int (values.max()+1))
-        xticks = hist_bins[::2] if max (values) < 30 else \
-                 hist_bins[::4] if max (values) < 70 else \
-                 hist_bins[::8] if max (values) < 200 else \
-                 hist_bins[::16] if max (values) < 300 else hist_bins[::32]
-
-        ## Top plot: distribution
-        axis = h.add_subplot (subgs[0])
-        #  Simulation
-        hist, edges = numpy.histogram (values, bins=hist_bins)
-        hist_sum = numpy.sum (hist)
-        hist = numpy.r_[hist[0], hist]
-        yvalues = hist/hist_sum
-        axis.plot (edges[:-1], yvalues[1:], label='sim', color=colors['simulation'], drawstyle='steps-mid',
-                   linestyle='-', linewidth=2.0, alpha=0.6)
-        yvalues = hist[1:]/hist_sum
-        yerrors = numpy.sqrt (hist[1:])/hist_sum
-        axis.errorbar (edges[:-1], yvalues, marker=None, color=colors['simulation'], yerr=yerrors,
-                       elinewidth=1.5, alpha=0.5, ecolor=colors['simulation'], linestyle='')
-        #  Theory
-        if aclass == 'interrupting':
-            pred = calculator.get_state_pdf_MMn (numpy.linspace (0, 1000, 1001), params['nRadiologists'],
-                                                 params['lambdas']['interrupting'],
-                                                 params['mus']['interrupting'])
-            xvalues, yvalues = numpy.linspace (0, 1000, 1001), pred
-        else:
-            if aclass == 'positive':
-                cal = calculator.def_cal_MMs (params, lowPriority='positive',
-                                              doDynamic=params['nRadiologists']>3)
-                pred = cal.solve_prob_distributions (1001)
-                ps = numpy.array ([numpy.sum (p).real for p in pred])
-                xvalues, yvalues = range (0, len (ps)), ps
-            else: 
-                xvalues, yvalues = None, None
-                if params['nRadiologists'] <= 2:
-                    cal = calculator.get_cal_lowest (params)
-                    pred = cal.solve_prob_distributions (1001)
-                    ps = numpy.array ([numpy.sum (p).real for p in pred])
-                    xvalues, yvalues = range (0, len (ps)), ps
-                elif params['fractionED'] == 0.0:
-                    cal = calculator.def_cal_MMs (params, lowPriority='negative',
-                                                  highPriority='positive',
-                                                  doDynamic=params['nRadiologists']>3)
-                    pred = cal.solve_prob_distributions (1001)
-                    ps = numpy.array ([numpy.sum (p).real for p in pred])
-                    xvalues, yvalues = range (0, len (ps)), ps        
-        if xvalues is not None:
-            axis.plot (xvalues, yvalues, label='theory', color=colors['theory'], linestyle='--', linewidth=2.0, alpha=0.7)
-                                
-        # Format x-axis
-        axis.set_xlim (hist_bins[0], hist_bins[-1])
-        axis.set_xticks (xticks)
-        axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
-        for xtick in axis.get_xticks():
-            axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
-        axis.get_xaxis().set_ticks([])
-        # Format y-axis
-        if doLogY: axis.set_yscale("log")
-        axis.set_ylim (min (hist/hist_sum), max (hist/hist_sum) + 0.05)
-        axis.set_ylabel ('Normalized counts', fontsize=9)
-        for ytick in axis.get_yticks():
-            axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
-        # Format others
-        axis.legend (loc='best', ncol=1, prop={'size':9})
-        axis.set_title ('With CADt; {0}'.format (aclass), fontsize=9)
-
-        ## Bottom plot: mean/1sigma
-        axis = h.add_subplot (subgs[1])
-        #  Simulation
-        xlower = [stats['preresume'][aclass]['mean'] - stats['preresume'][aclass]['lower_95cl']]
-        xupper = [stats['preresume'][aclass]['upper_95cl'] - stats['preresume'][aclass]['mean']]
-        axis.errorbar (stats['preresume'][aclass]['mean'], 1, marker="x", markersize=10, color=colors['simulation'],
-                       xerr=[xlower, xupper], elinewidth=3, alpha=0.8, ecolor=colors['simulation'], linestyle='')
-        #  Theory
-        if aclass == 'interrupting':
-            pred = calculator.get_state_pdf_MMn (numpy.linspace (0, 1000, 1001), params['nRadiologists'],
-                                                 params['lambdas']['interrupting'],
-                                                 params['mus']['interrupting'])
-        else:
-            if aclass == 'positive':
-                cal = calculator.def_cal_MMs (params, lowPriority='positive',
-                                              doDynamic=params['nRadiologists']>3)
-                pred = cal.solve_prob_distributions (1001)
-                pred = numpy.array ([numpy.sum (p).real for p in pred])
-            else: 
-                pred = None
-                if params['nRadiologists'] <= 2:
-                    cal = calculator.get_cal_lowest (params)
-                    pred = cal.solve_prob_distributions (1001)
-                    pred = numpy.array ([numpy.sum (p).real for p in pred])
-                elif params['fractionED'] == 0.0:
-                    cal = calculator.def_cal_MMs (params, lowPriority='negative',
-                                                  highPriority='positive',
-                                                  doDynamic=params['nRadiologists']>3)
-                    pred = cal.solve_prob_distributions (1001)
-                    pred = numpy.array ([numpy.sum (p).real for p in pred])                    
-        if pred is not None:
-            theoryStats = get_stats (numpy.linspace (0, 1000, 1001), pred)
-            xlower = [theoryStats['mean'] - theoryStats['lower_95cl']]
-            xupper = [theoryStats['upper_95cl'] - theoryStats['mean']]
-            axis.errorbar (theoryStats['mean'], 2, marker="x", color=colors['theory'], markersize=10,
-                        xerr=[xlower, xupper], elinewidth=3, alpha=0.8, ecolor=colors['theory'], linestyle='')
-
-        # Format x-axis
-        axis.set_xlim (hist_bins[0], hist_bins[-1])
-        axis.set_xlabel ('number of patients ({0} class only)'.format (aclass), fontsize=9)
-        axis.set_xticks (xticks)
-        axis.set_xticklabels ([int (x) for x in xticks], fontsize=7)
-        for xtick in axis.get_xticks():
-            axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
-        # Format y-axis
-        axis.set_ylim ([0, 3])
-        axis.set_yticks ([1, 2])
-        axis.set_yticklabels ([r'sim (95%)', r'theory (95%)'], fontsize=7)
-        for ytick in axis.get_yticks():
-            axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle=':', linewidth=0.1)
+    gindex = 0
+    ## Without CADt: Interrupting and Non-interrupting
+    for qtype in ['fifo', 'preresume']:
+        classes = ['interrupting', 'non-interrupting'] if qtype == 'fifo' else \
+                  ['interrupting', 'positive', 'negative']
+        if qtype == 'preresume': gindex = 3
+        for aclass in classes:
+            ## Skip the plot for interrupting class if fractionED = 0 i.e. no interrupting patients
+            if round (params['fractionED'],4) == 0 and aclass == 'interrupting':
+                gindex += 1
+                continue
+            ## Set up subplots and xticks
+            subgs = gs[gindex].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.05)        
+            ## Top: distribution
+            axis = h.add_subplot (subgs[0])
+            xticks = plot_n_patient_distribution (axis, nPatients[aclass][qtype], aclass, params, qtype, doLogY=True)
+            ## Bottom plot: mean/1sigma
+            axis = h.add_subplot (subgs[1])
+            plot_n_patient_stats (axis, xticks, stats[qtype][aclass], aclass, params, qtype)
+            gindex += 1
 
     plt.suptitle ('number of total patients in system per class', fontsize=10)
     h.savefig (outFile)

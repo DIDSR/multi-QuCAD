@@ -25,7 +25,7 @@
 import pickle, time, os, sys, cProfile, io, pstats, argparse, pandas
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, trialGenerator
+from tools import inputHandler, trialGenerator, plotter
 
 ################################
 ## Function
@@ -56,20 +56,23 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
     sim_wdf = trial_wdf[trial_wdf['trial_id']=='trial_000']
     wdf = sim_wdf[sim_wdf['is_interrupting']==False]
 
-    adict = {'sim_waittime':[], 'theory_waittime':[]}
+    adict = {'n_sim_pateints':[], 'sim_waittime':[], 'theory_waittime':[]}
     rows = ['fifo_non-interrupting'] + \
            ['preresume '+disease for disease in diseases] + \
            ['hierarchical '+disease for disease in diseases]
     
     for row in rows:
         if 'fifo' in row:
+            nvalue = len (wdf.fifo)
             simvalue = wdf.fifo.mean()
             theoryvalue = theory['fifo']['non-interrupting']
         else:
             qtype, disease = row.split()
+            nvalue = len (wdf[wdf['disease_name']==disease][qtype])
             simvalue = wdf[wdf['disease_name']==disease][qtype].mean()
             theoryvalue = theory[qtype][disease] if qtype == 'preresume' else \
                           theory[qtype][disease]['diseased']
+        adict['n_sim_pateints'].append (nvalue)            
         adict['sim_waittime'].append (simvalue)
         adict['theory_waittime'].append (theoryvalue)
 
@@ -107,10 +110,12 @@ if __name__ == '__main__':
     params['runTimeMin'] = (time.time() - t0)/60 # minutes
     print ('{0} trials took {1:.2f} minutes.\n'.format (params['nTrials'], params['runTimeMin']))
     
-    ## Print quick summary from one trial
+    ## Results
     print ('Quick results from 1 trial')
     results = sim_theory_summary (trialGen.waiting_times_df, params['theory'], params['diseaseGroups'])
     print (results)
+    outFile = params['plotPath'] + 'nPatientsDistributions.png'
+    plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df, trialGen.n_patients_system_stats, params)
 
     ## Gather data for dict
     data = {'params':params,

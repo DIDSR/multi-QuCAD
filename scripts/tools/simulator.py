@@ -435,8 +435,7 @@ class simulator (object):
             input
             -----
             gtype (str): subgroup name: 'all', 'non-interrupting',
-                         'interrupting', 'diseased', 'non-diseased',
-                         'positive', 'negative'
+                         'interrupting', 'positive', 'negative'
             
             output
             ------
@@ -459,8 +458,7 @@ class simulator (object):
             input
             -----
             gtype (str): subgroup name: 'all', 'non-interrupting',
-                         'interrupting', 'diseased', 'non-diseased',
-                         'positive', 'negative'
+                         'interrupting', 'positive', 'negative'
             
             output
             ------
@@ -475,7 +473,7 @@ class simulator (object):
     ## +---------------------------------------------
     ## | Private functions to simulate queues
     ## +---------------------------------------------
-    def _count_nPatients_in_queue (self, original,  qtype, noCADt=False):
+    def _count_nPatients_in_queue (self, original, noCADt=False):
 
         ''' Count the number of patients currently in the queue. This
             function is meant to be called right before a new patient
@@ -505,15 +503,13 @@ class simulator (object):
             copied (queue.PriorityQueue): copied queue with the same
                                           patients in the input queue
             nPatients (dict): number of patients in different subgroups,
-                              including 'all', 'interrupting', 'diseased',
-                              'non-interrupting', and 'non-diseased'. For
-                              with-CADt scenario, 'positive', 'negative',
-                              'TP', 'FP', 'TN', 'FN' are also included.
+                              including 'all', 'interrupting' and
+                              'non-interrupting'. For with-CADt scenario,
+                              'interrupting', 'positive', 'negative'.
         '''
 
         ## Set counters
         nClass1, nClass2, nAll = 0, 0, 0
-        nDiseased, nNonDiseased = 0, 0
         nEmergency, nNonEmergency = 0, 0
         ## Separate variable to keep track of the patient class
         pclass = None
@@ -522,9 +518,7 @@ class simulator (object):
         copied = queue.PriorityQueue()
 
         ## For without CADt scenario, only two priority classes:
-        ## interrupting and non-interrupting. Within the non-interrupting
-        ## class, count the numebr of diseased vs non-diseased
-        ## patients, both of which have the same priority classes.
+        ## interrupting and non-interrupting. 
         if noCADt:
             while not original.empty():
                 nAll += 1
@@ -534,64 +528,44 @@ class simulator (object):
                 if p.is_interrupting:
                     nEmergency += 1
                     pclass = 1
-                # Diseased patient is non-interrupting class i.e. 2
-                elif p.is_diseased:
-                    nNonEmergency += 1
-                    nDiseased += 1
-                    pclass = 2
-                # Non-diseased patient is non-interrupting class i.e. 2                    
                 else:
+                    # Non-interrupting class i.e. 2
                     nNonEmergency += 1
-                    nNonDiseased += 1
                     pclass = 2
                 # Copy this patient to the new queue. Prioritized based
                 # on patient's priority class, and then by its arrival
                 # time. The last entry is the patient instance.
                 copied.put ((pclass, p.trigger_time, p))
             
-            return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
-                            'diseased':nDiseased, 'non-diseased':nNonDiseased}
+            return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency}
     
         ## For with CADt scenario, there are three priority classes:
-        ## interrupting and positive and negative. Within the positive
-        ## and negative classes, also count the number of diseased
-        ## (i.e. TP or FN) and non-diseased (i.e. FP or TN) patients,
-        ## all of which have the same priority classes.
-        else: # this only works for preresume, not hierarchical queuing.
-            while not original.empty():
-                nAll += 1
-                # Pull out the patient instance
-                p = original.get()[2]
-                # Emergency class has the highest priority i.e. 1 
-                if p.is_interrupting:
-                    nEmergency += 1
-                    pclass = 1
-                # Positive class has a middle priority i.e. 2
-                elif p.priority_class == 2:
-                    nNonEmergency += 1
-                    nClass1 += 1
-                    pclass = 2
-                    if p.is_diseased:
-                        nDiseased += 1
-                    else:
-                        nNonDiseased += 1
-                # Negative class has the lowest priority i.e. 3
-                elif p.priority_class == 99:
-                    nNonEmergency += 1
-                    nClass2 += 1
-                    pclass = 99
-                    if p.is_diseased:
-                        nDiseased += 1
-                    else:
-                        nNonDiseased += 1
-                # Copy this patient to the new queue. Prioritized based
-                # on patient's priority class, and then by its arrival
-                # time. The last entry is the patient instance.                    
-                copied.put ((pclass, p.trigger_time, p))
-        
-            return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
-                            'positive':nClass1, 'negative':nClass2,
-                            'diseased':nDiseased, 'non-diseased':nNonDiseased}
+        ## interrupting and positive and negative. 
+        while not original.empty():
+            nAll += 1
+            # Pull out the patient instance
+            p = original.get()[2]
+            # Emergency class has the highest priority i.e. 1 
+            if p.is_interrupting:
+                nEmergency += 1
+                pclass = 1
+            # Positive class has a middle priority i.e. 2
+            elif p.priority_class == 2:
+                nNonEmergency += 1
+                nClass1 += 1
+                pclass = 2
+            # Negative class has the lowest priority i.e. 3
+            elif p.priority_class == 99:
+                nNonEmergency += 1
+                nClass2 += 1
+                pclass = 99
+            # Copy this patient to the new queue. Prioritized based
+            # on patient's priority class, and then by its arrival
+            # time. The last entry is the patient instance.                    
+            copied.put ((pclass, p.trigger_time, p))
+    
+        return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
+                        'positive':nClass1, 'negative':nClass2}
 
     def _count_nPatients (self, qtype, newArrivalTime):
         
@@ -620,7 +594,6 @@ class simulator (object):
         doctors = self._fionas if qtype=='fifo' else self._palmers if qtype=='preresume' else self._harmonys
         #   2. Holders for booleans
         doctor_is_busy, doctor_treating_interrupting = [], []
-        doctor_treating_diseased, doctor_treating_nondiseased = [], [] 
         doctor_treating_positive, doctor_treating_negative = [], []
         #   3. Loop through each doctor (in case of multiple radiologists)
         #      and get the subgroup of its current patient 
@@ -629,21 +602,14 @@ class simulator (object):
             #  appended to all holders instead of True or False.
             is_busy = doctor.is_busy (newArrivalTime)
             doctor_is_busy.append (is_busy)
-            #  Check whether the current patient is interrupting, diseased,
-            #  non-diseased, positive, or negative.
+            #  Check whether the current patient is interrupting, positive, or negative.
             interrupting   = numpy.nan if not is_busy else doctor.current_patient.is_interrupting
-            diseased    = numpy.nan if not is_busy else False if doctor.current_patient.is_interrupting else \
-                          doctor.current_patient.is_diseased
-            nondiseased = numpy.nan if not is_busy else False if doctor.current_patient.is_interrupting else \
-                          not doctor.current_patient.is_diseased                       
             positive    = numpy.nan if not is_busy else False if doctor.current_patient.is_interrupting else \
                           doctor.current_patient.is_positive
             negative    = numpy.nan if not is_busy else False if doctor.current_patient.is_interrupting else \
                           not doctor.current_patient.is_positive
             #  Append to boolean holders
             doctor_treating_interrupting.append (interrupting)
-            doctor_treating_diseased.append (diseased)
-            doctor_treating_nondiseased.append (nondiseased)
             doctor_treating_positive.append (positive)
             doctor_treating_negative.append (negative)
         #  4. Drop any None values in the boolean arrays 
@@ -651,11 +617,9 @@ class simulator (object):
         doctor_treating_interrupting   = remove_nan (numpy.array (doctor_treating_interrupting))
         doctor_treating_positive    = remove_nan (numpy.array (doctor_treating_positive))
         doctor_treating_negative    = remove_nan (numpy.array (doctor_treating_negative))
-        doctor_treating_diseased    = remove_nan (numpy.array (doctor_treating_diseased))
-        doctor_treating_nondiseased = remove_nan (numpy.array (doctor_treating_nondiseased))
         
         ## Count the number of patients currently in the queue
-        self._aqueue[qtype], nPatients = self._count_nPatients_in_queue (self._aqueue[qtype], qtype, noCADt=qtype=='fifo')
+        self._aqueue[qtype], nPatients = self._count_nPatients_in_queue (self._aqueue[qtype], noCADt=qtype=='fifo')
         
         ## Count the number of patients currently in the system
         for group, nqueue in nPatients.items():
@@ -677,15 +641,10 @@ class simulator (object):
                 is_group = doctor_is_busy
             elif qtype == 'fifo':
                 is_group = doctor_treating_interrupting   if group=='interrupting' else \
-                           ~doctor_treating_interrupting  if group=='non-interrupting' else \
-                           doctor_treating_diseased    if group=='diseased' else \
-                           doctor_treating_nondiseased if group=='non-diseased' else \
-                           numpy.zeros (len (doctor_treating_diseased)).astype (bool)
+                           ~doctor_treating_interrupting  ## group=='non-interrupting'
             else:
                 is_group = doctor_treating_interrupting   if group=='interrupting'     else \
                            ~doctor_treating_interrupting  if group=='non-interrupting' else \
-                           doctor_treating_diseased    if group=='diseased'      else \
-                           doctor_treating_nondiseased if group=='non-diseased'  else \
                            doctor_treating_positive    if group=='positive'      else \
                            doctor_treating_negative    ##if group=='negative'      
             #  Count the number of True in is_group i.e. number of patients in this subgroup
@@ -1028,21 +987,15 @@ class simulator (object):
         for p in future_patient[:]:
             if self._aqueue[qtype].qsize()==0 or p.trigger_time < drTime:
                 # Count # patients in queue and in system *right before* arrival
-                # IMPORTANT: self._count_nPatients is not updated for hierearchical queue; it will mess up the code if this condition is removed!!!!!!!!
-
-                if qtype != 'hierarchical': 
-                    self._count_nPatients (qtype, p.trigger_time)
-                # if qtype == 'hierarchical':
-                #     print('put in q:', p.caseID, p.trigger_time, p.disease_name, p.group_name, p.is_positive, '\n')
+                # No counting for hierarchical because this is meant to compare
+                # queuelength distribution with analytical state probabilities.
+                # For hierarchical queue, these distributions do not match.
+                if qtype != 'hierarchical':  self._count_nPatients (qtype, p.trigger_time)
                 # Put this patient in the queue
                 pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hierarchy_class
                 self._aqueue[qtype].put((pclass, p.trigger_time, p))
                 # Remove this patient from the list of future patient
                 future_patient.remove (p)
-                # Update logging
-                #if self._track_log:
-                #    self._log_string += 'from put_future_patients_in_queue for {0}: \n'.format (qtype)
-                #    self._append_log_string_patient (p)
         
         return future_patient
 
@@ -1240,32 +1193,21 @@ class simulator (object):
                        self._startTime for doctor in doctors]
             drTime = min (drTimes) 
 
-            # if qtype == 'hierarchical':
-            #     print('before handle-put-in-q:', '\n')
-            #     print(self._aqueue[qtype].queue)
-            
             ## For each future patient, decide if it needs to be put in the queue 
             for p in self._future_patients[qtype][:]:
                 if self._aqueue[qtype].qsize()==0 or p.trigger_time < drTime:
 
-                    ## Count # patients in queue and in system *right before* arrival. count_nPatients not updated for hierarchical queues!!! 
-                    if qtype != 'hierarchical':
-                        self._count_nPatients (qtype, p.trigger_time)
+                    ## Count # patients in queue and in system *right before* arrival
+                    ## for preresume and fifo (and later non-preemptive) queues. 
+                    if qtype != 'hierarchical': self._count_nPatients (qtype, p.trigger_time)
 
                     # Put this patient in the queue
                     self._logger.debug ('|   - putting patient {0} in queue.'.format (p.caseID))
                     pclass = 1 if p.is_interrupting else 2 if qtype=='fifo' else p.priority_class if qtype=='preresume' else p.hierarchy_class
                     self._aqueue[qtype].put((pclass, p.trigger_time, p))
 
-                    # if qtype == 'hierarchical':
-                    #     print('handle-put-in-q:', p.caseID, p.disease_name, p.group_name, p.is_positive, p.trigger_time, p.hier_class, '\n')
-                    #     print(self._aqueue[qtype].queue)
                     # Remove this patient from the list of future patient
                     self._future_patients[qtype].remove (p)
-                    # Update logging
-                    #if self._track_log: 
-                    #    self._log_string += 'from handle_next_patient for {0}: \n'.format (qtype)
-                    #    self._append_log_string_patient (p)
 
             self._logger.debug ('| * {0} patients currently in queue.'.format (self._aqueue[qtype].qsize()))
             self._logger.debug ('| * {0} future patients remain: {1}'.format (len (self._future_patients[qtype]),
@@ -1413,7 +1355,8 @@ class simulator (object):
         for subgroup in self._n_patients['preresume'].keys():
             adict = {}
             for qtype in queuetypes:
-                if qtype == 'fifo' and not subgroup in ['all', 'non-interrupting', 'interrupting', 'diseased', 'non-diseased']: continue
+                if qtype == 'hierarchical': continue                
+                if qtype == 'fifo' and subgroup in ['positive', 'negative']: continue
                 adict[qtype] = self._n_patients[qtype][subgroup]['total']
             dataframes[subgroup] = pandas.DataFrame.from_dict (adict, orient='index').transpose()
         self._n_patient_total_dataframe = dataframes
@@ -1423,7 +1366,8 @@ class simulator (object):
         for subgroup in self._n_patients['preresume'].keys():
             adict = {}
             for qtype in queuetypes:
-                if qtype == 'fifo' and not subgroup in ['all', 'non-interrupting', 'interrupting', 'diseased', 'non-diseased']: continue
+                if qtype == 'hierarchical': continue
+                if qtype == 'fifo' and subgroup in ['positive', 'negative']: continue
                 adict[qtype] = self._n_patients[qtype][subgroup]['queue']
             dataframes[subgroup] = pandas.DataFrame.from_dict (adict, orient='index').transpose()
         self._n_patient_queue_dataframe = dataframes
@@ -1548,7 +1492,6 @@ class simulator (object):
         self._harmonys = [radiologist.radiologist ('Harmony_'+str(i), self._serviceTimes)
                          for i in range (self._nRadiologists)]  
 
-
         ## Set holders for all patient records and queues
         self._patient_records = {qtype:[] for qtype in self._qtypes}
         self._aqueue = {qtype:queue.PriorityQueue() for qtype in self._qtypes}
@@ -1557,7 +1500,7 @@ class simulator (object):
         self._completed_patients = {qtype:[] for qtype in self._qtypes}
 
         ## Set holders for simulation results
-        groups = ['all', 'interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']
+        groups = ['all', 'interrupting', 'non-interrupting', 'positive', 'negative']
         self._n_patients = {qtype:{group:{'total':[], 'queue':[]} for group in groups} for qtype in self._qtypes}
         self._waiting_time_dataframe = None  
         self._n_patient_total_dataframe = None

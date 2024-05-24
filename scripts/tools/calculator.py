@@ -174,27 +174,24 @@ def get_theory_waitTime_fifo_preresume (aclass, variable, params):
                         patient waiting time with CADt scenario, or "delta"
                         for wait-time difference between the two scenarios.
         params (dict): dictionary capsulating all simulation parameters
-    '''
 
-    hist_bins = numpy.linspace (0, 1000, 1001)
+        output
+        ------
+        wait_time (float): theoretical wait time 
+    '''
 
     if aclass == 'interrupting' and variable == 'delta':
         return 0
     if aclass == 'interrupting':
-        interrupting_predL = get_state_pdf_MMn (hist_bins, params['nRadiologists'],
-                                                params['lambdas']['interrupting'],
-                                                params['mus']['interrupting'])
-        interrupting_predL = numpy.sum ([i*p for i, p in enumerate (interrupting_predL)]).real
+        _, state_prob = get_theory_qlength_fifo_preresume (aclass, variable, params)
+        interrupting_predL = numpy.sum ([i*p for i, p in enumerate (state_prob)]).real
         interrupting_predW = interrupting_predL / params['lambdas']['interrupting']
         interrupting_predW = interrupting_predW - 1/params['mus']['interrupting']
         return interrupting_predW
 
     ## For without-CADt, lower class = non-interrupting
-    nonInterrupting_cal = def_cal_MMs (params, lowPriority='non-interrupting',
-                                       doDynamic=params['nRadiologists']>3)
-    nonInterrupting_predL = nonInterrupting_cal.solve_prob_distributions (len (hist_bins))
-    nonInterrupting_predL = numpy.array ([numpy.sum (p) for p in nonInterrupting_predL])
-    nonInterrupting_predL = numpy.sum ([i*p for i, p in enumerate (nonInterrupting_predL)]).real
+    _, state_prob = get_theory_qlength_fifo_preresume (aclass, variable, params)
+    nonInterrupting_predL = numpy.sum ([i*p for i, p in enumerate (state_prob)]).real
     nonInterrupting_predW = nonInterrupting_predL / params['lambdas']['non-interrupting']
     nonInterrupting_predW = nonInterrupting_predW - 1/params['mus']['non-interrupting']
     if aclass == 'non-interrupting': return nonInterrupting_predW
@@ -202,11 +199,8 @@ def get_theory_waitTime_fifo_preresume (aclass, variable, params):
     if aclass in ['positive', 'negative'] and variable == 'fifo': return nonInterrupting_predW
 
     ## For with-CADt, non-interrupting class becomes positive and negative
-    positive_cal = def_cal_MMs (params, lowPriority='positive',
-                                doDynamic=params['nRadiologists']>3)
-    positive_predL = positive_cal.solve_prob_distributions (len (hist_bins))
-    positive_predL = numpy.array ([numpy.sum (p) for p in positive_predL])
-    positive_predL = numpy.sum ([i*p for i, p in enumerate (positive_predL)]).real
+    _, state_prob = get_theory_qlength_fifo_preresume (aclass, variable, params)
+    positive_predL = numpy.sum ([i*p for i, p in enumerate (state_prob)]).real
     positive_predW = positive_predL / params['lambdas']['positive']
     positive_predW = positive_predW - 1/params['mus']['positive']
     if aclass == 'positive' and variable == 'preresume': return positive_predW
@@ -219,12 +213,8 @@ def get_theory_waitTime_fifo_preresume (aclass, variable, params):
         return None
 
     ## Negative
-    negative_cal = get_cal_lowest (params) if params['fractionED'] > 0.0 else \
-                   def_cal_MMs (params, lowPriority='negative', highPriority='positive',
-                                doDynamic=params['nRadiologists']>3)
-    negative_predL = negative_cal.solve_prob_distributions (len (hist_bins))
-    negative_predL = numpy.array ([numpy.sum (p).real for p in negative_predL])
-    negative_predL = numpy.sum ([i*p for i, p in enumerate (negative_predL)]).real
+    _, state_prob = get_theory_qlength_fifo_preresume (aclass, variable, params)
+    negative_predL = numpy.sum ([i*p for i, p in enumerate (state_prob)]).real
     negative_predW = negative_predL / params['lambdas']['negative']
     negative_predW = negative_predW - 1/params['mus']['negative']
     if aclass == 'negative' and variable == 'preresume': return negative_predW
@@ -241,6 +231,74 @@ def get_theory_waitTime_fifo_preresume (aclass, variable, params):
     if aclass == 'non-diseased' and variable == 'delta': return nondiseased_predW - nonInterrupting_predW   
 
     print ('Should not land here!')
+
+def get_theory_qlength_fifo_preresume (aclass, qtype, params):
+
+    ''' Function to obtain theoretical queue length i.e. state probability.
+        If input number of radiologist is greater than 2, average waiting time
+        for AI negative subgroup cannot be calculated (hence, waiting time
+        and wait-time difference for radiologist diagnosis diseased and
+        non-diseased subgroups). The theoretical values will not be shown,
+        but the simulation results will be available.
+        
+        For preemptive, state is defined by number of patients in the system
+        i.e. `qlength` is the number of patients in the system. For non-
+        preemptive, state may be defined by number of patients in the queue
+        and so, `qlength` would be the number of patients in the queue.
+
+        inputs
+        ------
+        aclass (str): patient subgroup. Either interrupting, non-interrupting,
+                      positive, or negative.
+        qtype (str): what is being outputted? Either "fifo" for patient
+                     waiting time without CADt scenario, "preresume" for
+                     patient waiting time with CADt scenario.
+        params (dict): dictionary capsulating all simulation parameters
+
+        outputs
+        -------
+        qlength (array): number of patient in the queueing system
+        state_prob (array): state probabilities of the queueing system
+    '''
+
+    qlength = numpy.linspace (0, 1000, 1001)
+
+    if aclass == 'interrupting':
+        state_prob = get_state_pdf_MMn (qlength, params['nRadiologists'],
+                                        params['lambdas']['interrupting'],
+                                        params['mus']['interrupting'])
+        return qlength, state_prob
+
+    ## For without-CADt, lower class = non-interrupting
+    nonInterrupting_cal = def_cal_MMs (params, lowPriority='non-interrupting',
+                                       doDynamic=params['nRadiologists']>3)
+    state_prob = nonInterrupting_cal.solve_prob_distributions (len (qlength))
+    state_prob = numpy.array ([numpy.sum (p) for p in state_prob])
+    if aclass == 'non-interrupting': return qlength, state_prob
+    if aclass in ['positive', 'negative'] and qtype == 'fifo': return qlength, state_prob
+
+    ## For with-CADt, non-interrupting class becomes positive and negative
+    positive_cal = def_cal_MMs (params, lowPriority='positive',
+                                doDynamic=params['nRadiologists']>3)
+    state_prob = positive_cal.solve_prob_distributions (len (qlength))
+    state_prob = numpy.array ([numpy.sum (p) for p in state_prob])
+    if aclass == 'positive' and qtype == 'preresume': return qlength, state_prob
+
+    ## If input number of radiologists is more than 2 *and* fractionED is non-zero, cannot
+    ## calculate theoretical values for negative subgroup, hence, diseased and non-diseased subgroups.
+    if params['nRadiologists'] > 2 and params['fractionED'] >  0:
+        print ('WARN: Cannot calculate theoretical values for AI negative subgroup when more than 2 radiologists with presence of interrupting patient cases.')
+        return None, None
+
+    ## Negative
+    negative_cal = get_cal_lowest (params) if params['fractionED'] > 0.0 else \
+                   def_cal_MMs (params, lowPriority='negative', highPriority='positive',
+                                doDynamic=params['nRadiologists']>3)
+    state_prob = negative_cal.solve_prob_distributions (len (qlength))
+    state_prob = numpy.array ([numpy.sum (p).real for p in state_prob])
+    if aclass == 'negative' and qtype == 'preresume': return qlength, state_prob
+
+    return None, None
 
 def get_theory_chosen_dis_NP(params, chosen_dis_idx, diseases_with_AI, AI_group_hierarchy, vendor_hierarchy, disease_hierarchy):
     means_alone = []
@@ -525,7 +583,6 @@ def get_cal_lowest (params):
     ## For 2 radiologists; 6 busy periods
     if params['nRadiologists'] == 2:
         ## 1. [0,0]: (0,2,l) -> (0,1,l)
-        # 8.215, 0.512, 1.05 ##
         DR = DR_simple_solution (Zs['Z1'][0][0], Zs['Z2'][0][0], Zs['Z3'][0][0])
         t1_2M_1M, t12_2M_1M, t2_2M_1M = (1-DR[5])*DR[3], DR[5]*DR[3], DR[4]
         p_2M_1M = Gs[0][0]
@@ -534,6 +591,9 @@ def get_cal_lowest (params):
         DR = DR_simple_solution (Zs['Z1'][0][1], Zs['Z2'][0][1], Zs['Z3'][0][1])
         t0_2M_1H, t01_2M_1H = (1-DR[1])*DR[2], DR[1]*DR[2]
         t1_2M_1H, t12_2M_1H, t2_2M_1H = (1-DR[5])*DR[3], DR[5]*DR[3], DR[4]
+        #  By Michelle
+        if params['fractionED'] == 0.0:
+            t0_2M_1H, t01_2M_1H, t1_2M_1H, t12_2M_1H, t2_2M_1H = 0, 0, 0, 0, 0
         p_2M_1H = Gs[0][1]
         
         ## 3. [1,0]: (1,1,l) -> (0,1,l)

@@ -392,9 +392,10 @@ class trialGenerator (object):
 
         stats = {}
         for qtype in self._qtypes:
+            if qtype == 'hierarchical': continue
             stats[qtype] = {}
             for gtype in df.keys():
-                if qtype == 'fifo' and not gtype in ['all', 'non-interrupting', 'interrupting', 'diseased', 'non-diseased']: continue
+                if qtype == 'fifo' and gtype in ['positive', 'negative']: continue
                 stats[qtype][gtype] = self._get_stats(df[gtype][qtype])
         return stats
         
@@ -596,7 +597,7 @@ class trialGenerator (object):
         '''
 
         waitTimedfs = []
-        subgroups = ['non-interrupting', 'interrupting', 'diseased', 'non-diseased', 'positive', 'negative']
+        subgroups = ['non-interrupting', 'interrupting', 'positive', 'negative']
         ## Add TP, FN, etc
         nPatientsSystemdfs = {group:[] for group in subgroups}
         nPatientsQueuedfs = {group:[] for group in subgroups}
