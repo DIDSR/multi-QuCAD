@@ -22,10 +22,43 @@
 ################################
 ## Import packages
 ################################ 
-import pickle, time, os, sys, cProfile, io, pstats, argparse
+import pickle, time, os, sys, cProfile, io, pstats, argparse, pandas
 
 sys.path.insert(0, os.getcwd()+'\\tools')
 from tools import inputHandler, trialGenerator
+
+################################
+## Function
+################################ 
+def sim_theory_summary (trial_wdf, theory, diseaseGroups):
+
+    diseases = [gp['diseaseNames'][i] for _, gp in diseaseGroups.items()
+                for i in range (len (gp['diseaseNames']))]
+
+    sim_wdf = trial_wdf[trial_wdf['trial_id']=='trial_000']
+    wdf = sim_wdf[sim_wdf['is_interrupting']==False]
+
+    adict = {'sim_waittime':[], 'theory_waittime':[]}
+    rows = ['fifo_non-interrupting'] + \
+           ['preresume '+disease for disease in diseases] + \
+           ['hierarchical '+disease for disease in diseases]
+    
+    for row in rows:
+        if 'fifo' in row:
+            simvalue = wdf.fifo.mean()
+            theoryvalue = theory['fifo']['non-interrupting']
+        else:
+            qtype, disease = row.split()
+            simvalue = wdf[wdf['disease_name']==disease][qtype].mean()
+            theoryvalue = theory[qtype][disease]
+        adict['sim_waittime'].append (simvalue)
+        adict['theory_waittime'].append (theoryvalue)
+
+    ## Add in sim_delta and theory_delta 
+    adict['sim_delta'] = adict['sim_waittime'] - adict['sim_waittime'][0]
+    adict['theory_delta'] = adict['theory_waittime'] - adict['theory_waittime'][0]
+
+    return pandas.DataFrame (adict)
 
 ################################
 ## Script starts here!
@@ -52,8 +85,13 @@ if __name__ == '__main__':
     trialGen.set_params (params, AIs)
     trialGen.simulate_trials (AIs, aDiseaseTree)
     params['runTimeMin'] = (time.time() - t0)/60 # minutes
-    print ('{0} trials took {1:.2f} minutes'.format (params['nTrials'], params['runTimeMin']))
+    print ('{0} trials took {1:.2f} minutes.\n'.format (params['nTrials'], params['runTimeMin']))
     
+    ## Print quick summary from one trial
+    print ('Quick results from 1 trial')
+    results = sim_theory_summary (trialGen.waiting_times_df, params['theory'], params['diseaseGroups'])
+    print (results)
+
     ## Gather data for dict
     data = {'params':params,
             'lpatients':trialGen.n_patients_system_df,

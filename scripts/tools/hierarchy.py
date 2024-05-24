@@ -2,10 +2,11 @@
 ##
 ## By Elim Thompson (05/21/2024)
 ##
-## This script encapsulates all properties/calculations of a hierarchical
-## queue based on Rucha and Michelle works. This class also includes the
-## calculation of hierarchical queue.
-###########################################################################
+## This script encapsulates all properties/calculations of a hierarchical queue
+## based on Rucha and Michelle works. This class also includes the calculation
+## of hierarchical queue. This calculation would not work if ...
+##  * if multiple diseased in a group (e.g. A and B) but there are more than 1 AI.
+###################################################################################
 
 ################################
 ## Import packages
@@ -275,7 +276,7 @@ class hierarchy (object):
 
         return TZ, TNZ
 
-    def update_disease_names (self, newParams, groups_wAI):
+    def _update_disease_names (self, newParams, groups_wAI):
         
         ''' Private function to updates disease and group names for consistency in
             names in the theoretical calculations. Note only one AI is expected.
@@ -334,7 +335,7 @@ class hierarchy (object):
 
         return newParams
     
-    def update_newParams (self, newParams, groups_wAI, groups_noAI): 
+    def _update_newParams (self, newParams, groups_wAI, groups_noAI): 
         
         ''' Private function to compute and return params after creating equivalent
             AIs from multiple AIs. Equivalent Se, Sp and disease group probabilities
@@ -481,12 +482,12 @@ class hierarchy (object):
         groups_wAI = [aiinfo['groupName'] for _, aiinfo in params_out['AIinfo'].items()]
         if len (params_out['AIinfo']) > 1: 
             groups_noAI = list(set(params_out['diseaseGroups'].keys()) - set(groups_wAI)) 
-            params_out = self.update_newParams (params_out, groups_wAI, groups_noAI)
+            params_out = self._update_newParams (params_out, groups_wAI, groups_noAI)
         else:
-            params_out = self.update_disease_names(params_out, groups_wAI)
+            params_out = self._update_disease_names(params_out, groups_wAI)
             
         # ## Update additional params
-        params_out, _, _ = inputHandler.add_params (params_out)
+        params_out, _, _ = inputHandler.add_params (params_out, include_theory=False)
         return params_out
 
     def _define_high_low_classes (self, diseaseDivide):
@@ -575,7 +576,7 @@ class hierarchy (object):
         # To match the expected format in get_theory_waitTime
         updatedParams['SeThresh'] = list(updatedParams['SeThreshs'].values())[0] 
         updatedParams['SpThresh'] = list(updatedParams['SpThreshs'].values())[0]
-        meanWaitTime = calculator.get_theory_waitTime (pclass, 'preresume', updatedParams) 
+        meanWaitTime = calculator.get_theory_waitTime_fifo_preresume (pclass, 'preresume', updatedParams) 
         return updatedParams, meanWaitTime
 
     def predict_mean_wait_time (self, params):

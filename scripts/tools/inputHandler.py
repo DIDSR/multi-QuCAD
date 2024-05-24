@@ -890,39 +890,17 @@ def create_hierarchy (diseaseDict, AIinfo):
         AIinfo (dict): parameters and their values by each AI
                     e.g. {'Vendor1':{'groupName':'GroupCT', 'targetDisease':'A',
                                      'TPFThresh':0.95, 'FPFThresh':0.15, 'rocFile':None}}
+        
+        output
+        ------
+        aHierarchy (hierarhcy): info about hierarchical-preresume queue.
     '''
 
     aHierarchy = hierarchy.hierarchy()
     aHierarchy.build_hierarchy (diseaseDict, AIinfo)
     return aHierarchy
 
-def get_theory (params, aHierarchy):
-
-    groups_wAI = [aiinfo['groupName'] for _, aiinfo in params['AIinfo'].items()]
-    groups_noAI = list(set(params['diseaseGroups'].keys()) - set(groups_wAI))
-
-    ## For traditional preresume, create an equivalent group where all AIs are
-    ## considered as top priority. For FIFO, it wouldn't matter.
-    eqParams = aHierarchy.update_newParams (deepcopy (params), groups_wAI, groups_noAI) \
-                if len (params['AIinfo']) > 1 else \
-                aHierarchy.update_disease_names(deepcopy (params), groups_wAI)
-    eqParams['SeThresh'] = list(eqParams['SeThreshs'].values())[0]
-    eqParams['SpThresh'] = list(eqParams['SpThreshs'].values())[0]
-
-    theories = {}
-    for aclass in ['interrupting', 'non-interrupting', 'diseased', 'non-diseased', 'positive', 'negative']:
-        theories[aclass] = {}
-        for variable in ['fifo', 'preresume', 'delta']:
-            key = 'waitTime_noCADt' if variable == 'fifo' else \
-                  'waitTime_withCADt_preresume' if variable == 'preresume' else \
-                  'waitTime_diff_preseume' 
-            theories[aclass][key] = calculator.get_theory_waitTime (aclass, variable, eqParams)
-    
-    theories['hierarchy'] = aHierarchy.predict_mean_wait_time (params)
-
-    return theories
-
-def add_params (params):
+def add_params (params, include_theory=True):
 
     ''' Function to add additional parameters from user inputs. This includes
         probabilities that the next patient belongs to a certain priority class,
@@ -931,14 +909,15 @@ def add_params (params):
         inputs
         ------
         params (dict): dictionary with user inputs
-        anAI (AI): CADt with a diagnostic performance from user input
-        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
-                                    all group/disease/AI/reading time info.
+        include_theory (bool): if true, also calculate analytical mean wait-time
 
         output
         ------
         params (dict): dictionary capsulating all simulation parameters
                        and analytical time-savings.
+        anAI (AI): CADt with a diagnostic performance from user input
+        aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                    all group/disease/AI/reading time info.
     '''
 
     ## Create an array of AI objects, a disease tree, and a hierarchy
@@ -999,6 +978,7 @@ def add_params (params):
                       for key in params['lambdas'].keys()}
 
     ## Get theoretical waiting time and delta time (i.e. wait-time-saving)
-    #params['theory'] = get_theory (params, aHierarchy) 
+    if include_theory:
+        params['theory'] = calculator.get_theory_waitTime (params, aHierarchy) 
 
     return params, AIs, aDiseaseTree
