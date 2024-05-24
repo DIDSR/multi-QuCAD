@@ -15,6 +15,18 @@
 ## 3. Osogami's thesis (2005) Analysis of Multi-server Systems via
 ##    Dimensionality Reduction of Markov Chains
 ##    http://reports-archive.adm.cs.cmu.edu/anon/2005/CMU-CS-05-136.pdf
+##
+##
+## 05/23/2024
+## ----------
+##  * added hierarchical calculation from hier.py to here
+##  * What doesn't work?
+##      Hierarchical:
+##       - More than 1 AI in a group
+##       - Presence of interrupting patients
+##       - mud != mund ????
+##      Preresume:
+##       - mud != mund ????
 ###########################################################################
 
 ################################
