@@ -32,6 +32,24 @@ from tools import inputHandler, trialGenerator
 ################################ 
 def sim_theory_summary (trial_wdf, theory, diseaseGroups):
 
+    ''' Function to quickly print out wait-time and its difference
+        between simulation and theory for different diseased populations.
+
+        inputs
+        ------
+        trial_wdf (dataframe): wait-time dataframe from trialGenerator
+        theory (dict): theoretical prediction from calculator.get_theory_waitTime()
+        diseaseGroups (dict): user-input disease groups
+
+        output
+        ------
+        results (dataframe): 4 columns: sim_waittime, theory_waittime,
+                                        sim_delta = sim_waittime - sim_fifo
+                                        theory_delta = theory_waittime - theory_fifo
+                             for each disease condition for each queue type
+                             (preresume and hierarchical)
+    '''
+
     diseases = [gp['diseaseNames'][i] for _, gp in diseaseGroups.items()
                 for i in range (len (gp['diseaseNames']))]
 
@@ -50,7 +68,8 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
         else:
             qtype, disease = row.split()
             simvalue = wdf[wdf['disease_name']==disease][qtype].mean()
-            theoryvalue = theory[qtype][disease]
+            theoryvalue = theory[qtype][disease] if qtype == 'preresume' else \
+                          theory[qtype][disease]['diseased']
         adict['sim_waittime'].append (simvalue)
         adict['theory_waittime'].append (theoryvalue)
 
