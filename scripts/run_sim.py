@@ -101,9 +101,6 @@ if __name__ == '__main__':
     with open (params['statsFile'], 'wb') as f:
         pickle.dump (data, f)
     f.close()
-
-    #for AIname, AIinfo in params['AIinfo'].items():
-    #    trialGen.waiting_times_df.to_csv(f'{AIinfo['FPFThresh']}_{AIinfo['TPFThresh']}.csv')
     
     if params['doRunTime']:
         pr.disable()
