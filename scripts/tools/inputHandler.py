@@ -29,7 +29,7 @@ from . import diseaseTree, AI, hierarchy, calculator
 ## +------------------------
 ## | Workflow setting
 ## +------------------------
-qtypes = ['fifo', 'preresume', 'hierarchical'] # 'fifo' = without CADt scenario; 'preresume' = with CADt scenario
+qtypes = ['fifo', 'priority', 'hierarchical'] # 'fifo' = without CADt scenario; 'priority' = with CADt scenario
 rhoThresh = 0.99               # Maximum allowed hospital busyness
 nPatientsPads = [0, 1]         # Chop off the first and last 100 patients
 startTime = pandas.to_datetime ('2020-01-01 00:00') # Simulation Start time 
@@ -893,7 +893,7 @@ def create_hierarchy (diseaseDict, AIinfo):
         
         output
         ------
-        aHierarchy (hierarhcy): info about hierarchical-preresume queue.
+        aHierarchy (hierarhcy): info about hierarchical-priority queue.
     '''
 
     aHierarchy = hierarchy.hierarchy()

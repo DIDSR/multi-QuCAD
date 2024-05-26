@@ -28,7 +28,7 @@ from . import simulator
 ## with this highest-priority group, without-CADt scenario is a
 ## 2-priority-class system and is no longer fifo. However, this
 ## software still calls this without-CADt scenario "fifo". 
-queuetypes = ['fifo', 'preresume', 'hierarchical'] 
+queuetypes = ['fifo', 'priority', 'hierarchical'] 
 ## Names of priority classes in with CADt scenario. Positive
 ## and negative patients will be lumped into one priority
 ## class in the without-CADt scenario.
@@ -97,6 +97,7 @@ class trialGenerator (object):
         self._nPatientsPadStart = nPatientsPads[0] # number of patients to be padded before counting results 
         self._nPatientsPadEnd = nPatientsPads[1]   # number of patients to be padded after counting results
         self._hierDict = None                      # disease ranking in hierarchy queue
+        self._isPreemptive = True                  # priority queue type: is it preemptive? Default True        
 
         self._fractionED = None                    # fraction of emergent patient in all patients
         self._arrivalRate = None                   # overall patient arrival rate regardless of subgroups 
@@ -218,7 +219,14 @@ class trialGenerator (object):
         if not isinstance (nRadiologists, int):
             raise IOError ('Input nRadiologists must be an integer.')        
         self._nRadiologists = nRadiologists
-    
+    @property
+    def isPreemptive (self): return self._isPreemptive
+    @isPreemptive.setter
+    def isPreemptive (self, isPreemptive):
+        if not isinstance (isPreemptive, bool):
+            raise IOError ('Input isPreemptive must be a boolean.')        
+        self._isPreemptive = isPreemptive      
+
     ## +---------------------------------------------
     ## | Private functions to generate trials
     ## +---------------------------------------------
@@ -253,6 +261,7 @@ class trialGenerator (object):
         sim.nPatientPadsEnd = self._nPatientPadsEnd
         sim.nPatientPadsStart = self._nPatientPadsStart
         sim.hierDict = self._hierDict
+        sim.isPreemptive = self._isPreemptive
         
         return sim
         
@@ -440,7 +449,7 @@ class trialGenerator (object):
 
         print ('================================ {0} ================================'.format (trialId))
         
-        for qtype in ['fifo', 'preresume']:
+        for qtype in ['fifo', 'priority']:
             TP = numpy.array ([[a.caseID, a.total_service_duration, a.wait_time_duration]
                                for a in oneSim.get_TP_records (qtype)])
             FN = numpy.array ([[a.caseID, a.total_service_duration, a.wait_time_duration]
@@ -572,6 +581,7 @@ class trialGenerator (object):
         self.nPatientPadsStart = params['nPatientsPads'][0]
         self.nPatientPadsEnd = params['nPatientsPads'][1]
         self.hierDict = params['hierDict']
+        self.isPreemptive = params['isPreemptive']
         self._probs_ppv_npv = params['probs_ppv_npv']
     
         ## Once we know the disease groups, we can initialize sim_performanace.
@@ -618,7 +628,7 @@ class trialGenerator (object):
             df = sim.waiting_time_dataframe
             df['trial_id'] = 'trial_' + str (i).zfill (3)
             df['patient_id'] = df.index
-            df['delta'] = df['preresume'] - df['fifo'] # added RD
+            df['delta'] = df['priority'] - df['fifo'] # added RD
             waitTimedfs.append (df)
             
             # Handle n customers per class 

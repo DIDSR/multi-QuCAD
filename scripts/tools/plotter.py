@@ -28,7 +28,7 @@ day_to_second = 60 * 60 * 24
 hour_to_second = 60 * 60 
 minute_to_second = 60  
 
-queuetypes = ['fifo', 'preresume']
+queuetypes = ['fifo', 'priority']
 colors = {qtype: color for qtype, color in zip (queuetypes, plt.get_cmap ('Set2').colors)}
 colors['diseased'] = '#1f78b4' 
 colors['non-diseased'] = '#b2df8a'
@@ -58,11 +58,11 @@ def plot_timing (outFile, records, time0, n=200, qtype='fifo'):
         inputs
         ------
         outFile (str): filename of the output plot including path
-        records (dict): key = 'fifo' or 'preresume' for without and with CADt scenarios
+        records (dict): key = 'fifo' or 'priority' for without and with CADt scenarios
                         Each value is a list of patient instances.
         time0 (pandas Timestamp): simulation start time
         n (int): number of cases from the beginning of simulation to be included 
-        qtype (str): either 'fifo' or 'preresume' to be plotted
+        qtype (str): either 'fifo' or 'priority' to be plotted
     '''
 
     ## Extract the first N number of cases (default 200)
@@ -189,7 +189,7 @@ def plot_n_patient_distribution (axis, npatients, aclass, params, qtype, doLogY=
         npatients (): 
         aclass (str): either 'interrupting', 'non-interrupting', 'positive', 'negative'
         params (dict): all parameters related to user settings
-        qtype (str): either 'fifo' and 'preresume'
+        qtype (str): either 'fifo' and 'priority'
         doLogY (bool): if true, y-axis will be in log scale.
 
         output
@@ -236,7 +236,7 @@ def plot_n_patient_distribution (axis, npatients, aclass, params, qtype, doLogY=
     # Format others
     axis.legend (loc='best', ncol=1, prop={'size':9})
     if qtype == 'fifo': qtype = 'Without CADt '
-    if qtype == 'preresume': qtype = 'With CADt (preresume) '
+    if qtype == 'priority': qtype = 'With CADt (priority) '
     axis.set_title (qtype + aclass, fontsize=9)
 
     return xticks
@@ -253,7 +253,7 @@ def plot_n_patient_stats (axis, xticks, substats, aclass, params, qtype):
         substats (dict): stats of n patients for this class and this queue type
         aclass (str): either 'interrupting', 'non-interrupting', 'positive', 'negative'
         params (dict): all parameters related to user settings
-        qtype (str): either 'fifo' and 'preresume'
+        qtype (str): either 'fifo' and 'priority'
     '''
 
     #  Simulation
@@ -290,7 +290,7 @@ def plot_n_patient_distributions (outFile, nPatients, stats, params):
     ''' Function to plot distributions of the observed number of patients in
         the system *right before a new patient arrives* with CADt. Top row
         is without CADt (interrupting and non-interrupting). Last row is
-        with CADt preresume queue (interrupting, positive, and negative).
+        with CADt priority queue (interrupting, positive, and negative).
 
         inputs
         ------
@@ -308,10 +308,10 @@ def plot_n_patient_distributions (outFile, nPatients, stats, params):
 
     gindex = 0
     ## Without CADt: Interrupting and Non-interrupting
-    for qtype in ['fifo', 'preresume']:
+    for qtype in ['fifo', 'priority']:
         classes = ['interrupting', 'non-interrupting'] if qtype == 'fifo' else \
                   ['interrupting', 'positive', 'negative']
-        if qtype == 'preresume': gindex = 3
+        if qtype == 'priority': gindex = 3
         for aclass in classes:
             ## Skip the plot for interrupting class if fractionED = 0 i.e. no interrupting patients
             if round (params['fractionED'],4) == 0 and aclass == 'interrupting':
@@ -351,7 +351,7 @@ def plot_waiting_time_distributions (ext, waitTimesDF, stats, params):
     '''
 
     ## Calculate time difference per patient between with and without CADt
-    waitTimesDF['delta'] = waitTimesDF['preresume'] - waitTimesDF.fifo
+    waitTimesDF['delta'] = waitTimesDF['priority'] - waitTimesDF.fifo
 
     ## Plot waiting time grouped by AI call
     outFile = params['plotPath'] + 'waiting_time_distribution_AIcall' + ext
@@ -403,7 +403,7 @@ def plot_waiting_time_distribution (outFile, waitTimesDF, stats, params, byDiagn
 
     gindex = 0
     ## Looping through rows
-    for qtype in ['fifo', 'preresume', 'delta']:
+    for qtype in ['fifo', 'priority', 'delta']:
 
         gtypes = ['interrupting', 'non-interrupting', ''] if qtype == 'fifo' else \
                  ['interrupting', 'diseased', 'non-diseased'] if byDiagnosis else \
@@ -485,8 +485,8 @@ def plot_waiting_time_distribution (outFile, waitTimesDF, stats, params, byDiagn
 
             #  Simulation
             thisStats = stats['fifo']['waitTime'][gtype] if qtype == 'fifo' else \
-                        stats['preresume']['waitTime'][gtype] if qtype == 'preresume' else \
-                        stats['preresume']['diff'][gtype]
+                        stats['priority']['waitTime'][gtype] if qtype == 'priority' else \
+                        stats['priority']['diff'][gtype]
             xlower = [max (0, thisStats['mean'] - thisStats['lower_95cl'])]
             xupper = [max (0, thisStats['upper_95cl'] - thisStats['mean'])]
             axis.errorbar (thisStats['mean'], 1, marker="x", markersize=10, color=colors['simulation'], label='sim',

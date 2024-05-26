@@ -13,7 +13,7 @@
 ################################################
 ## Clinical setting
 ################################################
-isPreemptive                  False # True if preemptive priority i.e. radiologist is
+isPreemptive                   True # True if preemptive priority i.e. radiologist is
                                     # interrupted immediately upon arrival of a higher
                                     # priority case. False if non-preemptive priority
                                     # i.e. radiologist finishes the lower-priority case
@@ -59,17 +59,18 @@ meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in min
 
 GroupCTA
 groupProb                      1.0
-disease                        A   1   0.1   5
+disease                        A   1   0.1  5
+disease                        B   2   0.1  5
 meanServiceTimeNonDiseasedMin  5
+
+#GroupXR
+#groupProb                      0.6
+#disease                        B   2   0.1  5
+#meanServiceTimeNonDiseasedMin  5
 
 #GroupCX
 #groupProb                      0.3
-#disease                        B   2   0.15  5
-#meanServiceTimeNonDiseasedMin  5
-
-#GroupXR
-#groupProb                      0.3
-#disease                        C   3   0.05  5
+#disease                        C   3   0.1  5
 #meanServiceTimeNonDiseasedMin  5
 
 ################################################
@@ -110,6 +111,13 @@ targetDisease A
 TPFThresh     0.9       
 FPFThresh     0.3       
 rocFile       None 
+
+#Vendor2
+#groupName     GroupXR
+#targetDisease B
+#TPFThresh     0.8
+#FPFThresh     0.15
+#rocFile       None 
 
 ################################################
 ## Simulation setting

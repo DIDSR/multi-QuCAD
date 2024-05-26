@@ -335,6 +335,32 @@ class hierarchy (object):
 
         return newParams
     
+    def _get_info_for_equivalent_SeSp (self, newParams):
+
+        ## Create an equivalent AI, group, and the corresponding diseased probabilities.
+        all_se, all_sp, all_pop_prevalence, all_groupProbs, all_groupNames = [], [], [], [], []
+        for vendor in newParams['AIinfo'].keys():
+            all_se.append(newParams['AIinfo'][vendor]['TPFThresh'])
+            all_sp.append(1 - newParams['AIinfo'][vendor]['FPFThresh'])
+            all_groupProbs.append (newParams['diseaseGroups'][newParams['AIinfo'][vendor]['groupName']]['groupProb'])
+            all_groupNames.append (newParams['AIinfo'][vendor]['groupName'])
+
+            dis = newParams['AIinfo'][vendor]['targetDisease']
+            gp = newParams['AIinfo'][vendor]['groupName']
+            # Find disease index in the list of all diseases in a gp.
+            dis_idx = numpy.where (numpy.array (newParams['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
+            # Compute disease prevalence in population
+            pop_prev = newParams['diseaseGroups'][gp]['diseaseProbs'][dis_idx] \
+                        * newParams['diseaseGroups'][gp]['groupProb'] 
+            all_pop_prevalence.append(pop_prev)
+        all_se = numpy.array(all_se)
+        all_sp = numpy.array(all_sp)
+        all_pop_prevalence = numpy.array(all_pop_prevalence) 
+        all_groupProbs = numpy.array (all_groupProbs)
+        all_groupNames = numpy.array (all_groupNames)        
+
+        return all_se, all_sp, all_pop_prevalence, all_groupProbs, all_groupNames
+
     def _update_newParams (self, newParams, groups_wAI, groups_noAI): 
         
         ''' Private function to compute and return params after creating equivalent
@@ -360,26 +386,7 @@ class hierarchy (object):
         gpEQ_prob = sum (unique_gp_probs) 
         
         ## Create an equivalent AI, group, and the corresponding diseased probabilities.
-        all_se, all_sp, all_pop_prevalence, all_groupProbs, all_groupNames = [], [], [], [], []
-        for vendor in newParams['AIinfo'].keys():
-            all_se.append(newParams['AIinfo'][vendor]['TPFThresh'])
-            all_sp.append(1 - newParams['AIinfo'][vendor]['FPFThresh'])
-            all_groupProbs.append (newParams['diseaseGroups'][newParams['AIinfo'][vendor]['groupName']]['groupProb'])
-            all_groupNames.append (newParams['AIinfo'][vendor]['groupName'])
-
-            dis = newParams['AIinfo'][vendor]['targetDisease']
-            gp = newParams['AIinfo'][vendor]['groupName']
-            # Find disease index in the list of all diseases in a gp.
-            dis_idx = numpy.where (numpy.array (newParams['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
-            # Compute disease prevalence in population
-            pop_prev = newParams['diseaseGroups'][gp]['diseaseProbs'][dis_idx] \
-                        * newParams['diseaseGroups'][gp]['groupProb'] 
-            all_pop_prevalence.append(pop_prev)
-        all_se = numpy.array(all_se)
-        all_sp = numpy.array(all_sp)
-        all_pop_prevalence = numpy.array(all_pop_prevalence) 
-        all_groupProbs = numpy.array (all_groupProbs)
-        all_groupNames = numpy.array (all_groupNames)
+        all_se, all_sp, all_pop_prevalence, all_groupProbs, _ = self._get_info_for_equivalent_SeSp (newParams)
 
         ## Create an equivalent AI Se/Sp. Assuming ... 
         ##  1. Diseases seen by AIs are uncorrelated
@@ -577,7 +584,84 @@ class hierarchy (object):
         updatedParams['SeThresh'] = list(updatedParams['SeThreshs'].values())[0] 
         updatedParams['SpThresh'] = list(updatedParams['SpThreshs'].values())[0]
         meanWaitTime = calculator.get_theory_waitTime_fifo_preresume (pclass, 'preresume', updatedParams) 
+                       ## Another function if non-preemptive
         return updatedParams, meanWaitTime
+
+    def get_posNegWeights (self, params, disease, group):
+
+        ''' Function to calculate weigths to convert positive/negative wait time to diseased
+            and nondiseased. The mean wait-time of a disease of interests depends on 3 scenarios:
+            I. the disease of interests has an AI to identify it
+                (may have other AIs in the same group)
+            II. the disease of interests does not have an AI to identify it, but there are other
+                AIs in the same group i.e. any flagged cases are FP cases of other AIs.
+            III. the disease of interests belong to a group that does not have any AIs.
+            
+            e.g. GroupCTA has 5 diseases (A, B, C, D, E) and 3 AIs for A, C, E. The wait-time
+            I. For A is from both AI-A Se, AI-C Sp, and AI-E Sp.
+                            N_TP_AIA + N_FP_A_AIC + N_FP_A_AID          N_FN_AIA + N_TN_A_AIC + N_TN_A_AID
+                W_A = W+ x ------------------------------------ + W- x ------------------------------------ 
+                                            N_A                                         N_A
+                
+                1)  N_TP_AIA              
+                ---------- = AI-A-Se   
+                    N_A                 
+
+                2) N_FP_A_AIC     N_FP_A_AIC     N_FP_AIC     N_notC     N_G       pi_A                                     1
+                ------------ = ------------ x ---------- x -------- x ----- = ---------- x (1 - AI-C-Sp) x (1 - pi_C) x ------ = 1 - AI-C-Sp
+                    N_A         N_FP_AIC       N_notC       N_G       N_A     1 - pi_C                                  pi_A
+
+                3)  N_FP_AID                    4)  N_FN_AIA
+                ---------- = 1 - AI-D-Sp        ---------- = 1 - AI-A-Se
+                    N_A                              N_A
+                
+                5)  N_TN_AIC                    6)  N_TN_AID
+                ---------- = AI-C-Sp            ---------- = AI-D-Sp
+                    N_A                              N_A  
+                
+                i.e. for the AI-trained for this disease A, use Se and 1-Se. For other AIs in this same group,
+                    use (1-Sp) x (1-pi) / piA and Sp x (1-pi) / piA
+            II. For diseased cases with no AIs in a group that have AIs, some cases would be
+                accidentally prioritized. This calculation is the same as above except that 1)
+                and 4) are replaced the same Sp-version of AI-A (like 2, 3, 5, and 6)
+            III. For diseased cases with no AIs, the mean wait-time is simply the AI- mean wait-time.
+
+        '''
+
+        # Is there an AI reviewing this group?
+        AIsInGroup = [ainame for ainame, aiinfo in params['AIinfo'].items() if aiinfo['groupName']==group]
+
+        if disease in self.diseaseNamesWithAIs:
+            # Scenario I.
+            ainame_dis = [ainame for ainame, aiinfo in params['AIinfo'].items() if aiinfo['targetDisease']==disease][0]
+            posWeight, negWeight = 0, 0
+            for ainame in AIsInGroup:
+                ## For the AI targeted for this disease, Se and 1- Se
+                if ainame == ainame_dis:
+                    posWeight += params['AIinfo'][ainame_dis]['TPFThresh']
+                    negWeight += 1 - params['AIinfo'][ainame_dis]['TPFThresh']
+                    continue
+                ## For other AIs in the group, (1-Sp) and Sp 
+                Sp = 1 - params['AIinfo'][ainame]['FPFThresh']
+                posWeight += 1 - Sp
+                negWeight += Sp 
+
+            return posWeight, negWeight
+        
+        if len (AIsInGroup) > 0:
+            # Scenario II.
+            posWeight, negWeight = 0, 0
+            for ainame in AIsInGroup:
+                ## (1-Sp) and Sp 
+                Sp = 1 - params['AIinfo'][ainame]['FPFThresh']
+                posWeight += 1 - Sp 
+                negWeight += Sp 
+
+            return posWeight, negWeight
+        
+        else:
+            ## Scenario III
+            return 0, 1       
 
     def predict_mean_wait_time (self, params):
 
@@ -623,8 +707,9 @@ class hierarchy (object):
                 theories[disease]['negative'] = theory_neg
             
             ## Combine the postive and negative wait times to obtain the diseased wait-time.
-            theory_dis = theories[disease]['positive']*params['SeThreshs'][AIname] + \
-                         theories[disease]['negative']*(1 - params['SeThreshs'][AIname])
+            posWeight, negWeight = self.get_posNegWeights (params, disease, group)
+            theory_dis = theories[disease]['positive']*posWeight + \
+                         theories[disease]['negative']*negWeight
             theories[disease]['diseased'] = theory_dis
 
         return theories

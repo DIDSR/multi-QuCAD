@@ -48,21 +48,16 @@ class radiologist (object):
         
         ## Keep a record of the patient that is currently read by this radiologist 
         self._current_patient = None
-
         
     @property
-    def _get_serviceRate (self):
-        return self._serviceTimes
+    def _get_serviceRate (self): return self._serviceTimes
     
     @property
-    def radiologist_name (self):
-        return self._radiologist_name
+    def radiologist_name (self): return self._radiologist_name
 
     @property
-    def current_patient (self):
-        return self._current_patient
+    def current_patient (self): return self._current_patient
 
-    
     def is_busy (self, thisTime):
         
         ''' Is this radiologist busy at the input time? Yes if the current
@@ -131,14 +126,17 @@ class radiologist (object):
         #  * If the new patient's trigger time is before the current patient's close
         #    time, this new patient has to wait until the current case is closed.
 
-        # Note: High priority patient is already set as the current patient if this function is called within read_newest_urgent_patient. Not so otherwise.
+        # Note: High priority patient is already set as the current patient if this
+        # function is called within read_newest_urgent_patient. Not so otherwise.
 
-        # Previous code before hierarchical queuing was implemented is commented out right below ----
+        # Previous code before hierarchical queuing was implemented is commented
+        # out right below ----
         # openTime = apatient.trigger_time if self.current_patient is None else \
         #            apatient.trigger_time if self.current_patient.latest_close_time <= apatient.trigger_time else \
         #            self.current_patient.latest_close_time
 
-        # The following code was updated as part of hierarchical queuing. ##############################################################################
+        ##############################################################################
+        # The following code was updated as part of hierarchical queuing. 
 
         # current_patient is hi priority and was never read before. current_patient is apatient as well.
         if hi_priority and (len(apatient.open_times) == 0): 
@@ -172,7 +170,8 @@ class radiologist (object):
         apatient.add_doctor (self._radiologist_name)
         
         # Update current patient to the new patient. 
-        # This is redundant for hi_priority patients (because stop_reading sets the hi_priority patient to current_patient), but not redundant in other cases.
+        # This is redundant for hi_priority patients (because stop_reading sets the hi_priority
+        # patient to current_patient), but not redundant in other cases.
         self._current_patient = apatient
 
     def stop_reading (self, hi_priority_trigger_time, hi_priority_patient):
@@ -202,7 +201,6 @@ class radiologist (object):
         # The second occurs in hierarchical queuing when multiple interruptions can occur.
         # This may lead to a choice between reading a low-priority apatient or resuming a previously interrupted, but now hi-priority, hi_priority_patient.
         stop_reading_time = hi_priority_trigger_time if len(hi_priority_patient._open_times) == 0 else apatient.latest_open_time
-
 
         # For preemptive resume, we need to check the remaining service time
         # i.e. service duration of this patient - (diff between open times of

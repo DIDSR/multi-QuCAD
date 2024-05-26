@@ -16,7 +16,12 @@
 ##
 ## 05/20/2024
 ## ----------
-## * Cleaned up for publishing multi-QuCAD 
+## * Incorporated Rucha's work for hierarchical queue
+##
+## 05/24/2024
+## ----------
+## * Incorporated Michelle's method for non-preemptive hierarchical queue
+## * Extended it to non-preemptive priority queue
 #######################################################################################################
 
 ################################
@@ -47,7 +52,7 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
                                         sim_delta = sim_waittime - sim_fifo
                                         theory_delta = theory_waittime - theory_fifo
                              for each disease condition for each queue type
-                             (preresume and hierarchical)
+                             (priority and hierarchical)
     '''
 
     diseases = [gp['diseaseNames'][i] for _, gp in diseaseGroups.items()
@@ -58,7 +63,7 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
 
     adict = {'n_sim_pateints':[], 'sim_waittime':[], 'theory_waittime':[]}
     rows = ['fifo_non-interrupting'] + \
-           ['preresume '+disease for disease in diseases] + \
+           ['priority '+disease for disease in diseases] + \
            ['hierarchical '+disease for disease in diseases]
     
     for row in rows:
@@ -70,7 +75,7 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
             qtype, disease = row.split()
             nvalue = len (wdf[wdf['disease_name']==disease][qtype])
             simvalue = wdf[wdf['disease_name']==disease][qtype].mean()
-            theoryvalue = theory[qtype][disease] if qtype == 'preresume' else \
+            theoryvalue = theory[qtype][disease] if qtype == 'priority' else \
                           theory[qtype][disease]['diseased']
         adict['n_sim_pateints'].append (nvalue)            
         adict['sim_waittime'].append (simvalue)
@@ -82,6 +87,20 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
     adict['columns'] = rows
 
     return pandas.DataFrame (adict).set_index ('columns')
+
+def generate_plots (params, trialGen):
+
+    ''' Function to generate plots.
+
+        inputs
+        ------
+        params (dict): dictionary with user inputs
+        trialGen (trialGenerator): all results from simulations
+    '''
+
+    if params['isPreemptive']:
+        outFile = params['plotPath'] + 'nPatientsDistributions.png'
+        plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df, trialGen.n_patients_system_stats, params)
 
 ################################
 ## Script starts here!
@@ -114,8 +133,7 @@ if __name__ == '__main__':
     print ('Quick results from 1 trial')
     results = sim_theory_summary (trialGen.waiting_times_df, params['theory'], params['diseaseGroups'])
     print (results)
-    outFile = params['plotPath'] + 'nPatientsDistributions.png'
-    plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df, trialGen.n_patients_system_stats, params)
+    if params['doPlots']: generate_plots (params, trialGen)
 
     ## Gather data for dict
     data = {'params':params,
