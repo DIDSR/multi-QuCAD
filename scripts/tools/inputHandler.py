@@ -683,6 +683,279 @@ def get_isPos_isNeg (aDiseaseTree, probs):
 
     return PosNegProb
 
+def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
+    
+    '''
+    '''
+    prob_pos_i_neg_higher_AIs = {}
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        if groupName not in prob_pos_i_neg_higher_AIs:
+            prob_pos_i_neg_higher_AIs[groupName] = {}
+        for aDiseasei in aGroup.diseases[:-1]:
+            diseaseNamei = aDiseasei.diseaseName
+            p_i = 0
+            prodSps = 1
+            sumPis = 0
+            Sp_i = 1
+            Se_i = 0
+            for anAI in aGroup.AIs:
+                if aDiseasei.diseaseName==anAI.targetDisease:
+                    Sp_i = anAI.SpThresh
+                    Se_i = anAI.SeThresh
+                    break
+            for aDiseasej in aGroup.diseases[:-1]:
+                for anAI in aGroup.AIs:
+                    Sp_j = 1
+                    if aDiseasej.diseaseName==anAI.targetDisease:
+                        Sp_j = anAI.SpThresh
+                        break
+                sumPis = sumPis + aDiseasej.diseaseProb
+                if aGroup.diseases.index(aDiseasej) < aGroup.diseases.index(aDiseasei):
+                    prodSps = prodSps*Sp_j
+            for aDiseasek in aGroup.diseases[:-1]:
+                diseaseProbk = aDiseasek.diseaseProb
+                for anAI in aGroup.AIs:
+                    Sp_k = 1
+                    Se_k = 0
+                    if aDiseasek.diseaseName==anAI.targetDisease:
+                        Sp_k = anAI.SpThresh
+                        Se_k = anAI.SeThresh
+                        break
+                if aGroup.diseases.index(aDiseasek) < aGroup.diseases.index(aDiseasei):
+                    p_i = p_i + diseaseProbk * (1 - Se_k) * prodSps/Sp_k * (1 - Sp_i)
+                elif aGroup.diseases.index(aDiseasek) > aGroup.diseases.index(aDiseasei):
+                    p_i = p_i + diseaseProbk * prodSps * (1 - Sp_i)
+                else:
+                    p_i = p_i + diseaseProbk * prodSps * Se_i
+            p_i = p_i + (1 - sumPis) * prodSps * (1-Sp_i)
+            p_i = p_i * groupProb
+            prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] = p_i
+
+    return prob_pos_i_neg_higher_AIs
+
+def get_prob_thisdis_given_AI_pos (aDiseaseTree, prob_pos_i_neg_higher_AIs):
+    
+    ''' 
+    Function to get 
+    '''
+    prob_thisdis_given_thisAIpos = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+
+        # Get the group information
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        
+        if groupName not in prob_thisdis_given_thisAIpos:
+            prob_thisdis_given_thisAIpos[groupName] = {}
+
+        for aDiseasei in aGroup.diseases[:-1]:
+            diseaseNamei = aDiseasei.diseaseName
+            prodSps = 1
+            if diseaseNamei not in prob_thisdis_given_thisAIpos[groupName]:
+                prob_thisdis_given_thisAIpos[groupName][diseaseNamei] = {}
+            for anAI in aGroup.AIs:
+                Sp_i = 1
+                Se_i = 0
+                if aDiseasei.diseaseName==anAI.targetDisease:
+                    Sp_i = anAI.SpThresh 
+                    Se_i = anAI.SeThresh
+                    break
+            for aDiseasek in aGroup.diseases[:-1]:
+                if aGroup.diseases.index(aDiseasek) < aGroup.diseases.index(aDiseasei):
+                    for anAI in aGroup.AIs:
+                        correspondingSp = 1
+                        if aDiseasek.diseaseName==anAI.targetDisease:
+                            correspondingSp = anAI.SpThresh
+                        prodSps = prodSps * correspondingSp
+            for aDiseasej in aGroup.diseases:
+                diseaseNamej = aDiseasej.diseaseName
+                diseaseProbj = aDiseasej.diseaseProb
+                for anAI in aGroup.AIs:
+                    Sp_j = 1
+                    Se_j = 0
+                    if aDiseasej.diseaseName==anAI.targetDisease:
+                        Sp_j = anAI.SpThresh
+                        Se_j = anAI.SeThresh
+                        break
+                if aGroup.diseases.index(aDiseasej) > aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps
+                elif aGroup.diseases.index(aDiseasej) < aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps/Sp_j
+                elif aGroup.diseases.index(aDiseasej) == aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * Se_i * prodSps/Sp_j
+                else:
+                    p_ji = 0
+
+                prob_thisdis_given_thisAIpos[groupName][diseaseNamei][diseaseNamej] = p_ji
+    
+    return prob_thisdis_given_thisAIpos
+
+
+def get_prob_thisdis_given_AI_pos_flipped (aDiseaseTree, prob_pos_i_neg_higher_AIs):
+    
+    ''' 
+    Function to get 
+    '''
+    prob_thisdis_given_thisAIpos_flipped = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+
+        # Get the group information
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        
+        if groupName not in prob_thisdis_given_thisAIpos_flipped:
+            prob_thisdis_given_thisAIpos_flipped[groupName] = {}
+
+        for aDiseasei in aGroup.diseases[:-1]:
+            diseaseNamei = aDiseasei.diseaseName
+            prodSps = 1
+            for anAI in aGroup.AIs:
+                Sp_i = 1
+                Se_i = 0
+                if aDiseasei.diseaseName==anAI.targetDisease:
+                    Sp_i = anAI.SpThresh 
+                    Se_i = anAI.SeThresh
+                    break
+            for aDiseasek in aGroup.diseases[:-1]:
+                if aGroup.diseases.index(aDiseasek) < aGroup.diseases.index(aDiseasei):
+                    for anAI in aGroup.AIs:
+                        correspondingSp = 1
+                        if aDiseasek.diseaseName==anAI.targetDisease:
+                            correspondingSp = anAI.SpThresh
+                            break
+                        prodSps = prodSps * correspondingSp
+            for aDiseasej in aGroup.diseases:
+                diseaseNamej = aDiseasej.diseaseName
+                diseaseProbj = aDiseasej.diseaseProb
+                if diseaseNamej not in prob_thisdis_given_thisAIpos_flipped[groupName]:
+                    prob_thisdis_given_thisAIpos_flipped[groupName][diseaseNamej] = {}
+                for anAI in aGroup.AIs:
+                    Sp_j = 1
+                    Se_j = 0
+                    if aDiseasej.diseaseName==anAI.targetDisease:
+                        Sp_j = anAI.SpThresh
+                        Se_j = anAI.SeThresh
+                        break
+                if aGroup.diseases.index(aDiseasej) > aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps
+                elif aGroup.diseases.index(aDiseasej) < aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps/Sp_j
+                elif aGroup.diseases.index(aDiseasej) == aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * Se_i * prodSps
+                else:
+                    p_ji = 0
+
+                prob_thisdis_given_thisAIpos_flipped[groupName][diseaseNamej][diseaseNamei] = p_ji
+    
+    return prob_thisdis_given_thisAIpos_flipped
+
+
+def get_prob_thisdis_given_AI_neg (aDiseaseTree, prob_pos_i_neg_higher_AIs):
+    
+    '''
+    '''
+    prob_thisdis_given_AI_neg = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+
+        # Get the group information
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        
+        if groupName not in prob_thisdis_given_AI_neg:
+            prob_thisdis_given_AI_neg[groupName] = {}
+
+        for aDiseasei in aGroup.diseases[:-1]:
+            diseaseNamei = aDiseasei.diseaseName
+            diseaseProbi = aDiseasei.diseaseProb
+            prodSps = 1
+            for anAI in aGroup.AIs:
+                Se_i = 0
+                Sp_i = 1
+                if aDiseasei.diseaseName==anAI.targetDisease:
+                    Se_i = anAI.SeThresh
+                    Sp_i = anAI.SpThresh
+                    break
+            for aDiseasek in aGroup.diseases[:-1]:
+                for anAI in aGroup.AIs:
+                    Sp_k = 1
+                    if aDiseasek.diseaseName==anAI.targetDisease:
+                        Sp_k = anAI.SpThresh
+                        break
+                prodSps = prodSps * Sp_k
+            
+            sum_prob_pos_i_neg_higher_AIs = 0
+            for disease in prob_pos_i_neg_higher_AIs[groupName]:
+                sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
+            p_i = 1/(1-sum_prob_pos_i_neg_higher_AIs) * groupProb * diseaseProbi * (1-Se_i) * prodSps/Sp_i
+
+            prob_thisdis_given_AI_neg[groupName][diseaseNamei] = p_i  
+
+    return prob_thisdis_given_AI_neg
+
+
+def get_probnondis_thisgroup_givenneg(aDiseaseTree, prob_pos_i_neg_higher_AIs):
+
+    '''
+    '''
+    probnondis_thisgroup_givenneg = {}
+
+    for aGroup in aDiseaseTree.diseaseGroups:
+
+        # Get the group information
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        
+        if groupName not in probnondis_thisgroup_givenneg:
+            probnondis_thisgroup_givenneg[groupName] = {}
+
+        sum_prob_pos_i_neg_higher_AIs = 0
+        sum_disease_probs = 0
+        prodSps = 1
+        for aDisease in aGroup.diseases[:-1]:
+            diseaseProb = aDisease.diseaseProb
+            diseaseName = aDisease.diseaseName
+            sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][diseaseName]
+            sum_disease_probs += diseaseProb
+            for anAI in aGroup.AIs:
+                Sp_k = 1
+                if aDisease.diseaseName==anAI.targetDisease:
+                    Sp_k = anAI.SpThresh
+                    break
+            prodSps = prodSps * Sp_k
+            
+        p_i = 1/(1-sum_prob_pos_i_neg_higher_AIs) * groupProb * (1-sum_disease_probs) * prodSps
+        probnondis_thisgroup_givenneg[groupName] = p_i  
+
+    return probnondis_thisgroup_givenneg
+
+
+#probs_for_conversion[j] accesses an array of probabilities P(a_i + subgroup | diseased b_j) for all AIs a_i 
+# now, P(a_i + subgroup | diseased b_j) = P(dis b_j | a_i + subgroup) * P(a_i + subgroup) / P(dis b_j) ... let's create a function for this
+def get_probs_for_waittime_conversion (aDiseaseTree, prob_thisdis_given_AI_pos_flipped, prob_pos_i_neg_higher_AIs):
+    probs_for_waittime_conversion = {}
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupProb = aGroup.groupProb
+        groupName = aGroup.groupName
+        prob_pos_i_neg_higher_AIs_dict = prob_pos_i_neg_higher_AIs[groupName] # this gives array of P(a_i + subgroup | diseased b_j), for fixed j, looping through a_i + subgroups.
+        keys = list(prob_pos_i_neg_higher_AIs_dict.keys())[:]
+        prob_pos_i_neg_higher_AIs_array = [prob_pos_i_neg_higher_AIs_dict[key] for key in keys]
+        prob_pos_i_neg_higher_AIs_array = numpy.array(prob_pos_i_neg_higher_AIs_array)
+        for aDisease in aGroup.diseases[:-1]:
+            diseaseProb = aDisease.diseaseProb
+            diseaseName = aDisease.diseaseName
+            prob_thisdis_given_AI_pos_flipped_dict = prob_thisdis_given_AI_pos_flipped[groupName][diseaseName] # this gives array of P(dis b_j | AI+ a_i), for fixed j, looping through a_i + subgroups.
+            keys = list(prob_thisdis_given_AI_pos_flipped_dict.keys())[:]
+            prob_thisdis_given_AIpos_flipped_array = [prob_thisdis_given_AI_pos_flipped_dict[key] for key in keys]
+            prob_thisdis_given_AIpos_flipped_array = numpy.array(prob_thisdis_given_AIpos_flipped_array)
+            probs_for_waittime_conversion[diseaseName] = prob_thisdis_given_AIpos_flipped_array * prob_pos_i_neg_higher_AIs_array / (diseaseProb * groupProb)
+
+    return probs_for_waittime_conversion
+
 def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False):
     
     ''' Function to calculate 1. effective reading time for this priority class and
@@ -941,6 +1214,12 @@ def add_params (params, include_theory=True):
     params['probs_ppv_npv'] = get_ppvs_npvs (aDiseaseTree)
     params['probs'] = get_positive_negative_probs (aDiseaseTree, probs)
     params['probs_pos_neg'] = get_isPos_isNeg (aDiseaseTree, params['probs'])
+    params['prob_pos_i_neg_higher_AIs'] = get_prob_pos_i_neg_higher_AIs (aDiseaseTree)
+    params['prob_thisdis_given_AI_pos'] = get_prob_thisdis_given_AI_pos (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
+    params['prob_thisdis_given_AI_pos_flipped'] = get_prob_thisdis_given_AI_pos_flipped (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
+    params['prob_thisdis_given_AI_neg'] = get_prob_thisdis_given_AI_neg (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
+    params['probnondis_thisgroup_givenneg'] = get_probnondis_thisgroup_givenneg(aDiseaseTree,  params['prob_pos_i_neg_higher_AIs'])
+    params['probs_for_waittime_conversion'] = get_probs_for_waittime_conversion (aDiseaseTree, params['prob_thisdis_given_AI_pos_flipped'], params['prob_pos_i_neg_higher_AIs'])
     params['prob_isPositive'] = params['probs_pos_neg']['positive']*(1-params['fractionED'])
     params['prob_isNegative'] = params['probs_pos_neg']['negative']*(1-params['fractionED'])
     
@@ -979,6 +1258,6 @@ def add_params (params, include_theory=True):
 
     ## Get theoretical waiting time and delta time (i.e. wait-time-saving)
     if include_theory:
-        params['theory'] = calculator.get_theory_waitTime (params, aHierarchy) 
+       params['theory'] = calculator.get_theory_waitTime (params, aHierarchy) 
 
     return params, AIs, aDiseaseTree

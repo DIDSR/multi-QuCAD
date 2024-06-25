@@ -13,7 +13,7 @@
 ################################################
 ## Clinical setting
 ################################################
-isPreemptive                   True # True if preemptive priority i.e. radiologist is
+isPreemptive                   False # True if preemptive priority i.e. radiologist is
                                     # interrupted immediately upon arrival of a higher
                                     # priority case. False if non-preemptive priority
                                     # i.e. radiologist finishes the lower-priority case
@@ -58,20 +58,20 @@ meanServiceTimeInterruptingMin 5    # Average radiologist's service time [in min
 ##
 
 GroupCTA
-groupProb                      1.0
-disease                        A   1   0.1  5
-disease                        B   2   0.1  5
+groupProb                      0.4
+disease                        A   1   0.2  5
+disease                        B   2   0.1  3
+meanServiceTimeNonDiseasedMin  2
+
+GroupXR
+groupProb                      0.5
+disease                        C   2   0.1  10
+meanServiceTimeNonDiseasedMin  3
+
+GroupCX
+groupProb                      0.1
+disease                        D   3   0.1  5
 meanServiceTimeNonDiseasedMin  5
-
-#GroupXR
-#groupProb                      0.6
-#disease                        B   2   0.1  5
-#meanServiceTimeNonDiseasedMin  5
-
-#GroupCX
-#groupProb                      0.3
-#disease                        C   3   0.1  5
-#meanServiceTimeNonDiseasedMin  5
 
 ################################################
 ## CADt AI diagnostic performance
@@ -109,15 +109,22 @@ Vendor1
 groupName     GroupCTA
 targetDisease A
 TPFThresh     0.9       
-FPFThresh     0.3       
+FPFThresh     0.1       
 rocFile       None 
 
-#Vendor2
-#groupName     GroupXR
-#targetDisease B
-#TPFThresh     0.8
-#FPFThresh     0.15
-#rocFile       None 
+Vendor2
+groupName     GroupCTA
+targetDisease B
+TPFThresh     0.8
+FPFThresh     0.2
+rocFile       None 
+
+Vendor3
+groupName     GroupXR
+targetDisease C
+TPFThresh     0.9
+FPFThresh     0.1
+rocFile       None 
 
 ################################################
 ## Simulation setting
