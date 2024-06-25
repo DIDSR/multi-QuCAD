@@ -312,8 +312,11 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
     diseased_wait_times = []
 
     ## Loop through all groups, get info for each AI-positive subgroup
-    for i in range(len(numpy.unique(aHierarchy.groupNames))):
-        groupname = numpy.unique(aHierarchy.groupNames)[i]
+    arr = aHierarchy.groupNames
+    _, idx = numpy.unique(arr, return_index=True)
+    unique_groupNames_array = arr[numpy.sort(idx)]
+    for i in range(len(unique_groupNames_array)):
+        groupname = unique_groupNames_array[i]
         # get read times for all diseases in group (excluding non-diseased)
         data_dict_readtimes = params['meanServiceTimes'][groupname]
         keys = list(data_dict_readtimes.keys())[:-1]
@@ -343,6 +346,7 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
             ## Get probability of AI a_i positive across whole population
             prob_pos_group = params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
             prob_pos_groups.append(prob_pos_group)
+            print('diseaseName, prob_pos_group', diseasename, prob_pos_group)
             ## Get arrival rate for patients with this specific disease 
             arrival_rate = prob_pos_group * params['arrivalRates']['non-interrupting']
             arrival_rates.append(arrival_rate)

@@ -62,10 +62,11 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups):
     wdf = sim_wdf[sim_wdf['is_interrupting']==False]
 
     adict = {'n_sim_pateints':[], 'sim_waittime':[], 'theory_waittime':[]}
-    rows = ['fifo_non-interrupting'] + \
-           ['priority '+disease for disease in diseases] + \
-           ['hierarchical '+disease for disease in diseases]
+    # rows = ['fifo_non-interrupting'] + \
+    #        ['priority '+disease for disease in diseases] + \
+    #        ['hierarchical '+disease for disease in diseases]
     
+    rows = ['hierarchical '+disease for disease in diseases]
     for row in rows:
         if 'fifo' in row:
             nvalue = len (wdf.fifo)
