@@ -342,11 +342,10 @@ class hierarchy (object):
         for vendor in newParams['AIinfo'].keys():
             all_se.append(newParams['AIinfo'][vendor]['TPFThresh'])
             all_sp.append(1 - newParams['AIinfo'][vendor]['FPFThresh'])
-            all_groupProbs.append (newParams['diseaseGroups'][newParams['AIinfo'][vendor]['groupName']]['groupProb'])
-            all_groupNames.append (newParams['AIinfo'][vendor]['groupName'])
-
-            dis = newParams['AIinfo'][vendor]['targetDisease']
             gp = newParams['AIinfo'][vendor]['groupName']
+            dis = newParams['AIinfo'][vendor]['targetDisease']
+            all_groupProbs.append (newParams['diseaseGroups'][newParams['AIinfo'][vendor]['groupName']]['groupProb'])
+            all_groupNames.append (gp)
             # Find disease index in the list of all diseases in a gp.
             dis_idx = numpy.where (numpy.array (newParams['diseaseGroups'][gp]['diseaseNames'])==dis)[0][0]
             # Compute disease prevalence in population
@@ -495,6 +494,7 @@ class hierarchy (object):
             
         # ## Update additional params
         params_out, _, _ = inputHandler.add_params (params_out, include_theory=False)
+
         return params_out
 
     def _define_high_low_classes (self, diseaseDivide):
@@ -584,7 +584,7 @@ class hierarchy (object):
         updatedParams['SeThresh'] = list(updatedParams['SeThreshs'].values())[0] 
         updatedParams['SpThresh'] = list(updatedParams['SpThreshs'].values())[0]
         meanWaitTime = calculator.get_theory_waitTime_fifo_preresume (pclass, 'preresume', updatedParams) 
-                       ## Another function if non-preemptive
+        ## Another function if non-preemptive
         return updatedParams, meanWaitTime
 
     def get_posNegWeights (self, params, disease, group):

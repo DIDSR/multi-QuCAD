@@ -1349,7 +1349,7 @@ class simulator (object):
                                               columns=columns+[qtype, qtype+'_trigger', qtype+'_open', qtype+'_close'])
             df = pandas.merge (df, adf.drop (axis=1, columns=columns),
                                right_index=True, left_index=True, how='inner')
-
+            
         ## Store the data frame as a private variable
         self._waiting_time_dataframe = df
 
@@ -1405,6 +1405,7 @@ class simulator (object):
         '''
         
         if is_positive: return self.classes['positive']
+
         return self.classes['negative']
 
     def _get_hier_class (self, is_positive, is_positives):
@@ -1431,11 +1432,11 @@ class simulator (object):
         
         # For all AIs that flagged the patient positive, get the corresponding
         # disease number. Return the smallest number (highest priority) from this list. 
-        return min ([self.hierDict[ainame] for ainame in is_positives.keys()])
+        return min([self.hierDict[ainame] for ainame in is_positives.keys() if is_positives[ainame]])
 
     def _AI_is_positive (self, apatient, groups_with_AI, aDiseaseTree):
         
-        ''' Collect all AI labels by individual AIs (if reviewed) and the
+        ''' Collect all AI labels by individual AIs (if reviewed) and the 
             overall flag (if the case is flagged by any one of the AIs).
 
             inputs

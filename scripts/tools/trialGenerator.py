@@ -381,6 +381,65 @@ class trialGenerator (object):
     
         return stats       
     
+    def _get_sim_probabilities(self, df, aDiseaseTree, params):
+        ''' 
+        This function is not essential for running the script.
+
+        It gets conditional probabilities used in theory calculation for purpose of comparison with simulation.
+        Print statements can be un-commented for purpose of sim/theory comparison.
+        '''
+        ## Loop through all groups, get info for each AI-positive subgroup
+        condition_negs = {}
+        for aGroup in aDiseaseTree.diseaseGroups:
+            vendors_in_group = []
+            condition_neg_thisgroup = True
+            for anAI in aGroup.AIs:
+                vendors_in_group.append(anAI.AIname)
+            for vendor in vendors_in_group:
+                condition_neg_thisgroup &= (df[vendor] == False)
+            condition_negs[aGroup.groupName] = condition_neg_thisgroup
+
+        all_vendors = []
+        for aGroup in aDiseaseTree.diseaseGroups:
+            for anAI in aGroup.AIs:
+                all_vendors.append(anAI.AIname)
+        condition_neg = True
+        for vendor in all_vendors:
+            condition_neg &= (df[vendor] == False) | pandas.isna(df[vendor])
+    
+        total_AI_neg_patients = len(df[condition_neg])
+
+        for aGroup in aDiseaseTree.diseaseGroups:
+            vendors_in_group = []
+            groupname = aGroup.groupName
+            for anAI in aGroup.AIs:
+                vendors_in_group.append(anAI.AIname)
+                for diseasenamei in aGroup.diseases[:-1]:
+                    if diseasenamei.diseaseName==anAI.targetDisease:
+                        vendorname = anAI.AIname
+                        condition = df[vendorname] == True
+                        # Create conditions for all other vendors being False
+                        for vendor in vendors_in_group:
+                            if vendor != vendorname:
+                                condition &= df[vendor] == False
+                        total_AI_pos_patients = len(df[condition])
+                        #print('Prob AI+ subgroup', diseasenamei.diseaseName, total_AI_pos_patients/len(df), 'THEORY:', params['prob_pos_i_neg_higher_AIs'][groupname][diseasenamei.diseaseName])            
+                        for diseasenamej in aGroup.diseases[:-1]:
+                            dis_bj_patients = len(df[df['disease_name'] == diseasenamej.diseaseName])
+                            temp_condition = condition & (df['disease_name'] == diseasenamej.diseaseName)
+                            temp_condition_neg = condition_neg & (df['disease_name'] == diseasenamej.diseaseName)
+                            dis_bj_and_AI_pos = len(df[temp_condition])
+                            dis_bj_and_AI_neg = len(df[temp_condition_neg])
+                            #print('Prob', diseasenamej.diseaseName, 'given AI+', diseasenamei.diseaseName, dis_bj_and_AI_pos/total_AI_pos_patients,'THEORY:', params['prob_thisdis_given_AI_pos'][groupname][diseasenamei.diseaseName][diseasenamej.diseaseName])
+                            #print('Prob AI+', diseasenamei.diseaseName, 'given dis', diseasenamej.diseaseName, dis_bj_and_AI_pos/dis_bj_patients,'THEORY:', params['probs_for_waittime_conversion'][diseasenamej.diseaseName])
+                            #print('Prob', diseasenamej.diseaseName, 'given AI-', dis_bj_and_AI_neg/total_AI_neg_patients,'THEORY:', params['prob_thisdis_given_AI_neg'][groupname][diseasenamej.diseaseName])
+                condition_neg_thisgroup = condition_negs[groupname] & (df['disease_name'] == 'non-diseased')
+                nondis_thisgroup_AI_neg = len(df[condition_neg_thisgroup])
+                #print('Prob non-dis, group', diseasenamei.diseaseName, 'given AI-', nondis_thisgroup_AI_neg/total_AI_neg_patients, 'THEORY:', params['probnondis_thisgroup_givenneg'][groupname])
+
+        return 
+
+
     def _get_n_patients_stats (self, df):
 
         ''' Obtain statistics from number of patients as observed by each
@@ -612,6 +671,7 @@ class trialGenerator (object):
         nPatientsSystemdfs = {group:[] for group in subgroups}
         nPatientsQueuedfs = {group:[] for group in subgroups}
         sim = simulator.simulator()
+
         ## Generate trials
         for i in range (self._nTrials):
             

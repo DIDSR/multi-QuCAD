@@ -155,6 +155,7 @@ def read_args (configFile):
     params = {'configFile':configFile, 'qtypes':qtypes,
               'nPatientsPads':nPatientsPads, 'startTime':startTime}
     params.update (read_configFile (configFile))
+    print(params)
 
     if params['verbose']:
         print ('Reading user inputs:')
@@ -686,7 +687,30 @@ def get_isPos_isNeg (aDiseaseTree, probs):
 def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
     
     '''
+    Function to calculate the probability that a patient belongs to a particular AI+ subgroup.
+    If multiple AIs in a group flag the same patient positive, that patient is counted as belonging to the
+    highest-priority subgroup. E.g., if GroupCTA contains AIs targeting disease A and B and a patient is flagged
+    as positive by both, but the AI targeting disease A is higher-priority, that patient belongs to the
+    AI+ A subgroup, but not the AI+ B subgroup.
+
+    See Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilites (p_i in the overleaf doc).
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    outputs
+    ------
+    prob_pos_i_neg_higher_AIs (dict): has groups as outer keys and diseases-within-group as inner keys.
+                                    Stores the probability that a patient belongs to the corresponding AI+ subgroup.
+                                    If no AI for that disease, the probability is 0.
+                                    e.g. For a scenario with GroupCTA containing patients with diseases A and B
+                                    and an AI targeting each disease, and GroupUS containing patients 
+                                    with diseases C and D with one AI targeting disease C and no AIs targeting disease D, 
+                                    dict could look like {'GroupCTA': {'A': 0.55, 'B': 0.3}, 'GroupUS': {'C': 0.15, 'D': 0}}
     '''
+
     prob_pos_i_neg_higher_AIs = {}
     for aGroup in aDiseaseTree.diseaseGroups:
         groupProb = aGroup.groupProb
@@ -706,8 +730,8 @@ def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
                     Se_i = anAI.SeThresh
                     break
             for aDiseasej in aGroup.diseases[:-1]:
+                Sp_j = 1
                 for anAI in aGroup.AIs:
-                    Sp_j = 1
                     if aDiseasej.diseaseName==anAI.targetDisease:
                         Sp_j = anAI.SpThresh
                         break
@@ -716,9 +740,9 @@ def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
                     prodSps = prodSps*Sp_j
             for aDiseasek in aGroup.diseases[:-1]:
                 diseaseProbk = aDiseasek.diseaseProb
+                Sp_k = 1
+                Se_k = 0
                 for anAI in aGroup.AIs:
-                    Sp_k = 1
-                    Se_k = 0
                     if aDiseasek.diseaseName==anAI.targetDisease:
                         Sp_k = anAI.SpThresh
                         Se_k = anAI.SeThresh
@@ -738,7 +762,30 @@ def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
 def get_prob_thisdis_given_AI_pos (aDiseaseTree, prob_pos_i_neg_higher_AIs):
     
     ''' 
-    Function to get 
+    Function to get conditional probabilities P(disease X| AI+ Y): that is, the probability that a patient has disease X 
+    given that the patient is a part of the AI+ Y subgroup. 
+
+    See Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilities.
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    prob_pos_i_neg_higher_AIs (dict): the dictionary of probabilities P(AI+ subgroup) obtained in get_prob_pos_i_neg_higher_AIs function.
+
+    outputs
+    ------
+    prob_thisdis_given_thisAIpos (dict): A dictionary with outermost key = group, middle key = AI Y, and innermost key = disease X.
+                                    Stores the probability P(diseased X | AI+ Y).
+                                    If no AI for disease Y, probabilities are 0.
+                                    e.g. For a scenario with GroupCTA containing patients with diseases A and B
+                                    and an AI targeting each disease, and GroupUS containing patients 
+                                    with diseases C and D with one AI targeting disease C and no AIs targeting disease D, 
+                                    dict could look like {'GroupCTA': {'A': {'A': 0.65, 'B': 0.05}, 'B': {'A': 0.1, 'B': 0.7}}, 
+                                    'GroupUS': {'C': {'C': 0.75, 'D': 0.1}, 'D': {'C': 0, 'D': 0}}}.
+
+                                    This means, e.g. that P(diseased B | AI+ A) = 0.05, P(diseased A | AI+ B) = 0.1.
     '''
     prob_thisdis_given_thisAIpos = {}
 
@@ -781,67 +828,7 @@ def get_prob_thisdis_given_AI_pos (aDiseaseTree, prob_pos_i_neg_higher_AIs):
                         Se_j = anAI.SeThresh
                         break
                 if aGroup.diseases.index(aDiseasej) > aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
-                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps
-                elif aGroup.diseases.index(aDiseasej) < aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
-                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps/Sp_j
-                elif aGroup.diseases.index(aDiseasej) == aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
-                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * Se_i * prodSps/Sp_j
-                else:
-                    p_ji = 0
-
-                prob_thisdis_given_thisAIpos[groupName][diseaseNamei][diseaseNamej] = p_ji
-    
-    return prob_thisdis_given_thisAIpos
-
-
-def get_prob_thisdis_given_AI_pos_flipped (aDiseaseTree, prob_pos_i_neg_higher_AIs):
-    
-    ''' 
-    Function to get 
-    '''
-    prob_thisdis_given_thisAIpos_flipped = {}
-
-    for aGroup in aDiseaseTree.diseaseGroups:
-
-        # Get the group information
-        groupProb = aGroup.groupProb
-        groupName = aGroup.groupName
-        
-        if groupName not in prob_thisdis_given_thisAIpos_flipped:
-            prob_thisdis_given_thisAIpos_flipped[groupName] = {}
-
-        for aDiseasei in aGroup.diseases[:-1]:
-            diseaseNamei = aDiseasei.diseaseName
-            prodSps = 1
-            for anAI in aGroup.AIs:
-                Sp_i = 1
-                Se_i = 0
-                if aDiseasei.diseaseName==anAI.targetDisease:
-                    Sp_i = anAI.SpThresh 
-                    Se_i = anAI.SeThresh
-                    break
-            for aDiseasek in aGroup.diseases[:-1]:
-                if aGroup.diseases.index(aDiseasek) < aGroup.diseases.index(aDiseasei):
-                    for anAI in aGroup.AIs:
-                        correspondingSp = 1
-                        if aDiseasek.diseaseName==anAI.targetDisease:
-                            correspondingSp = anAI.SpThresh
-                            break
-                        prodSps = prodSps * correspondingSp
-            for aDiseasej in aGroup.diseases:
-                diseaseNamej = aDiseasej.diseaseName
-                diseaseProbj = aDiseasej.diseaseProb
-                if diseaseNamej not in prob_thisdis_given_thisAIpos_flipped[groupName]:
-                    prob_thisdis_given_thisAIpos_flipped[groupName][diseaseNamej] = {}
-                for anAI in aGroup.AIs:
-                    Sp_j = 1
-                    Se_j = 0
-                    if aDiseasej.diseaseName==anAI.targetDisease:
-                        Sp_j = anAI.SpThresh
-                        Se_j = anAI.SeThresh
-                        break
-                if aGroup.diseases.index(aDiseasej) > aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
-                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps
+                    p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Sp_i) * prodSps
                 elif aGroup.diseases.index(aDiseasej) < aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
                     p_ji = (1/prob_pos_i_neg_higher_AIs[groupName][diseaseNamei]) * groupProb * diseaseProbj * (1-Se_j) * (1-Sp_i) * prodSps/Sp_j
                 elif aGroup.diseases.index(aDiseasej) == aGroup.diseases.index(aDiseasei) and prob_pos_i_neg_higher_AIs[groupName][diseaseNamei] != 0:
@@ -849,17 +836,81 @@ def get_prob_thisdis_given_AI_pos_flipped (aDiseaseTree, prob_pos_i_neg_higher_A
                 else:
                     p_ji = 0
 
-                prob_thisdis_given_thisAIpos_flipped[groupName][diseaseNamej][diseaseNamei] = p_ji
+                prob_thisdis_given_thisAIpos[groupName][diseaseNamei][diseaseNamej] = p_ji
     
-    return prob_thisdis_given_thisAIpos_flipped
+    return prob_thisdis_given_thisAIpos
 
+def get_prob_thisdis_given_AI_pos_flipped(params):
+    ''' 
+    Takes output of get_prob_thisdis_given_AI_pos function above, and flips middle and innermost keys of the dictionary.
+    This is needed in the calculation of probabilities to convert AI+ wait-times to wait-times for true diseased groups
+    (function get_probs_for_waittime_conversion).
+
+    inputs
+    ------
+    params (dict): dictionary with user inputs
+
+    outputs
+    ------
+    prob_thisdis_given_thisAIpos_flipped (dict): A dictionary with outermost key = group, middle key = disease X, and innermost key = AI Y.
+                                    Stores the probability P(diseased X | AI+ Y).
+                                    If no AI for disease Y, probabilities are 0.
+                                    e.g. For a scenario with GroupCTA containing patients with diseases A and B
+                                    and an AI targeting each disease, and GroupUS containing patients 
+                                    with diseases C and D with one AI targeting disease C and no AIs targeting disease D, 
+                                    dict could look like
+
+                                    {'GroupCTA': {'A': {'A': 0.65, 'B': 0.1}, 'B': {'A': 0.05, 'B': 0.7}}, 
+                                    'GroupUS': {'C': {'C': 0.75, 'D': 0}, 'D': {'C': 0.1, 'D': 0}}}.
+
+                                    This means, e.g. that P(diseased B | AI+ A) = 0.05, P(diseased A | AI+ B) = 0.1.
+    '''
+    rearranged_data = {}
+    data = params['prob_thisdis_given_AI_pos']
+    # Iterate over the original dictionary to switch the second-most and third-most outer keys
+    for outer_key, inner_dict in data.items():
+        rearranged_data[outer_key] = {}
+        for second_outer_key, third_inner_dict in inner_dict.items():
+            for third_outer_key, value in third_inner_dict.items():
+                if third_outer_key not in rearranged_data[outer_key]:
+                    rearranged_data[outer_key][third_outer_key] = {}
+                rearranged_data[outer_key][third_outer_key][second_outer_key] = value
+
+    return rearranged_data
 
 def get_prob_thisdis_given_AI_neg (aDiseaseTree, prob_pos_i_neg_higher_AIs):
     
-    '''
+    ''' 
+    Function to get conditional probabilities P(disease X | AI - subgroup): that is, the probability that a patient has disease X 
+    given that the patient is a part of the AI- subgroup (where AI- subgroup is comprised of ALL AI- patients, regardless of
+    disease group.)
+
+    See Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilities.
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    prob_pos_i_neg_higher_AIs (dict): the dictionary of probabilities P(AI+ subgroup) obtained in get_prob_pos_i_neg_higher_AIs function.
+
+    outputs
+    ------
+    prob_thisdis_given_thisAIneg (dict): A dictionary with outer key = group, and inner key = disease X.
+                                    Stores the probability P(diseased X | AI- subgroup).
+
+                                    e.g. For a scenario with GroupCTA containing patients with diseases A and B,
+                                    and  GroupUS containing patients with diseases C and D,
+                                    dict could look like {'GroupCTA': {'A': 0.2, 'B': 0.1}, 'GroupUS': {'C': 0.05, 'D': 0.4}}}.
     '''
     prob_thisdis_given_AI_neg = {}
 
+    sum_prob_pos_i_neg_higher_AIs = 0
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupName = aGroup.groupName
+        for disease in prob_pos_i_neg_higher_AIs[groupName]:
+            sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
+    
     for aGroup in aDiseaseTree.diseaseGroups:
 
         # Get the group information
@@ -873,36 +924,57 @@ def get_prob_thisdis_given_AI_neg (aDiseaseTree, prob_pos_i_neg_higher_AIs):
             diseaseNamei = aDiseasei.diseaseName
             diseaseProbi = aDiseasei.diseaseProb
             prodSps = 1
+            Se_i = 0
+            Sp_i = 1
             for anAI in aGroup.AIs:
-                Se_i = 0
-                Sp_i = 1
                 if aDiseasei.diseaseName==anAI.targetDisease:
                     Se_i = anAI.SeThresh
                     Sp_i = anAI.SpThresh
                     break
             for aDiseasek in aGroup.diseases[:-1]:
+                Sp_k = 1
                 for anAI in aGroup.AIs:
-                    Sp_k = 1
                     if aDiseasek.diseaseName==anAI.targetDisease:
                         Sp_k = anAI.SpThresh
                         break
                 prodSps = prodSps * Sp_k
             
-            sum_prob_pos_i_neg_higher_AIs = 0
-            for disease in prob_pos_i_neg_higher_AIs[groupName]:
-                sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
             p_i = 1/(1-sum_prob_pos_i_neg_higher_AIs) * groupProb * diseaseProbi * (1-Se_i) * prodSps/Sp_i
 
             prob_thisdis_given_AI_neg[groupName][diseaseNamei] = p_i  
 
     return prob_thisdis_given_AI_neg
 
-
 def get_probnondis_thisgroup_givenneg(aDiseaseTree, prob_pos_i_neg_higher_AIs):
+    
+    ''' 
+    Function to get conditional probabilities P(nondiseased, group X | AI- subgroup): that is, the probability that a patient in the AI-
+    subgroup is nondiseased and from group X.
 
-    '''
+    See Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilities.
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    prob_pos_i_neg_higher_AIs (dict): the dictionary of probabilities P(AI+ subgroup) obtained in get_prob_pos_i_neg_higher_AIs function.
+
+    outputs
+    ------
+    prob_nondis_thisgroup_givenneg (dict): A dictionary with key = group name.
+                                    Stores the probability P(nondiseased, group X | AI- subgroup).
+                                    e.g. For a scenario with two groups GroupCTA and GroupUS, possibly with multiple diseases in each,
+                                    dict could look like {'GroupCTA': 0.15, 'GroupUS': 0.1}
+
+                                    This means, e.g. that P(patient is non-diseased and from GroupCTA | AI-) = 0.15.
     '''
     probnondis_thisgroup_givenneg = {}
+    sum_prob_pos_i_neg_higher_AIs = 0
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupName = aGroup.groupName
+        for disease in prob_pos_i_neg_higher_AIs[groupName]:
+            sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
 
     for aGroup in aDiseaseTree.diseaseGroups:
 
@@ -913,16 +985,14 @@ def get_probnondis_thisgroup_givenneg(aDiseaseTree, prob_pos_i_neg_higher_AIs):
         if groupName not in probnondis_thisgroup_givenneg:
             probnondis_thisgroup_givenneg[groupName] = {}
 
-        sum_prob_pos_i_neg_higher_AIs = 0
         sum_disease_probs = 0
         prodSps = 1
         for aDisease in aGroup.diseases[:-1]:
             diseaseProb = aDisease.diseaseProb
             diseaseName = aDisease.diseaseName
-            sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][diseaseName]
             sum_disease_probs += diseaseProb
+            Sp_k = 1
             for anAI in aGroup.AIs:
-                Sp_k = 1
                 if aDisease.diseaseName==anAI.targetDisease:
                     Sp_k = anAI.SpThresh
                     break
@@ -934,17 +1004,47 @@ def get_probnondis_thisgroup_givenneg(aDiseaseTree, prob_pos_i_neg_higher_AIs):
     return probnondis_thisgroup_givenneg
 
 
-#probs_for_conversion[j] accesses an array of probabilities P(a_i + subgroup | diseased b_j) for all AIs a_i 
-# now, P(a_i + subgroup | diseased b_j) = P(dis b_j | a_i + subgroup) * P(a_i + subgroup) / P(dis b_j) ... let's create a function for this
 def get_probs_for_waittime_conversion (aDiseaseTree, prob_thisdis_given_AI_pos_flipped, prob_pos_i_neg_higher_AIs):
+    ''' 
+    Function to get conditional probabilities P(AI+ Y subgroup | diseased X).
+    This is needed for the conversion of AI+ subgroup wait-times to wait-times for true diseased groups.
+
+    See end of Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilities.
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    prob_pos_i_neg_higher_AIs (dict): a dictionary of probabilities P(AI+ subgroup) obtained in get_prob_pos_i_neg_higher_AIs function.
+    
+    prob_thisdis_given_thisAIpos_flipped (dict): a dictionary with outermost key = group, middle key = disease X, and innermost key = AI Y.
+                                                Stores the probabilities P(diseased X | AI+ Y).
+
+    outputs
+    ------
+    probs_for_waittime_conversion (dict): A dictionary with key = disease name (e.g., X).
+                                    Stores an array of probabilities P(AI+ Y subgroup | diseased X), where elements of array correspond to
+                                    AIs Y in the group containing disease X (in order of hierarchy).
+
+                                    These probabilities are calculated from the relationship
+                                    P(AI+ Y subgroup | diseased X) = P(diseased X | AI+ Y subgroup) * P(AI+ Y subgroup) / P(diseased X).
+
+                                    e.g. For a scenario with GroupCTA containing patients with diseases A and B,
+                                    and  GroupUS containing patients with diseases C and D, with no AI looking for D,
+                                    {'A': array([0.6, 0.05]), 'B': array([0.1, 0.75]), 'C': array([0.7, 0]), 'D': array([0.06, 0])}
+
+                                    This means, e.g. that P(diseased A | AI+ A subgroup) = 0.6, P(diseased D | AI+ C subgroup) = 0.06.
+    '''
     probs_for_waittime_conversion = {}
     for aGroup in aDiseaseTree.diseaseGroups:
         groupProb = aGroup.groupProb
         groupName = aGroup.groupName
-        prob_pos_i_neg_higher_AIs_dict = prob_pos_i_neg_higher_AIs[groupName] # this gives array of P(a_i + subgroup | diseased b_j), for fixed j, looping through a_i + subgroups.
+        prob_pos_i_neg_higher_AIs_dict = prob_pos_i_neg_higher_AIs[groupName] # this gives array of P(a_i + subgroup)
         keys = list(prob_pos_i_neg_higher_AIs_dict.keys())[:]
         prob_pos_i_neg_higher_AIs_array = [prob_pos_i_neg_higher_AIs_dict[key] for key in keys]
         prob_pos_i_neg_higher_AIs_array = numpy.array(prob_pos_i_neg_higher_AIs_array)
+
         for aDisease in aGroup.diseases[:-1]:
             diseaseProb = aDisease.diseaseProb
             diseaseName = aDisease.diseaseName
@@ -955,6 +1055,33 @@ def get_probs_for_waittime_conversion (aDiseaseTree, prob_thisdis_given_AI_pos_f
             probs_for_waittime_conversion[diseaseName] = prob_thisdis_given_AIpos_flipped_array * prob_pos_i_neg_higher_AIs_array / (diseaseProb * groupProb)
 
     return probs_for_waittime_conversion
+
+def get_prob_AI_neg_group(aDiseaseTree, prob_pos_i_neg_higher_AIs):
+
+    ''' 
+    Simple function to get the probability that a patient belongs to the AI- subgroup, P(AI- subgroup).
+
+    inputs
+    ------
+    aDiseaseTree (diseaseTree): a diseaseTree instance that encapsulates
+                                all group/disease/AI/reading time info.
+
+    prob_pos_i_neg_higher_AIs (dict): a dictionary of probabilities P(AI+ subgroup) obtained in get_prob_pos_i_neg_higher_AIs function.
+    
+    outputs
+    ------
+    A single number representing the probability that a patient belongs to the AI- subgroup.
+    '''
+    sum_prob_pos_i_neg_higher_AIs = 0
+    for aGroup in aDiseaseTree.diseaseGroups:
+        groupName = aGroup.groupName
+        for disease in prob_pos_i_neg_higher_AIs[groupName]:
+            sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
+            
+    p_i = 1-sum_prob_pos_i_neg_higher_AIs
+    prob_AI_neg_group = p_i  
+
+    return prob_AI_neg_group
 
 def get_mu (aDiseaseTree, probs, probs_pos_neg, probs_ppv_npv, mus, doNeg=False):
     
@@ -1199,7 +1326,7 @@ def add_params (params, include_theory=True):
     
     aDiseaseTree = create_disease_tree (params['diseaseGroups'],
                                         params['meanServiceTimes'], AIs)
-    
+
     aHierarchy = create_hierarchy (params['diseaseGroups'], params['AIinfo'])
     params['hierDict'] = aHierarchy.hierDict
 
@@ -1215,8 +1342,9 @@ def add_params (params, include_theory=True):
     params['probs'] = get_positive_negative_probs (aDiseaseTree, probs)
     params['probs_pos_neg'] = get_isPos_isNeg (aDiseaseTree, params['probs'])
     params['prob_pos_i_neg_higher_AIs'] = get_prob_pos_i_neg_higher_AIs (aDiseaseTree)
+    params['prob_AI_neg_group'] = get_prob_AI_neg_group(aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
     params['prob_thisdis_given_AI_pos'] = get_prob_thisdis_given_AI_pos (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
-    params['prob_thisdis_given_AI_pos_flipped'] = get_prob_thisdis_given_AI_pos_flipped (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
+    params['prob_thisdis_given_AI_pos_flipped'] = get_prob_thisdis_given_AI_pos_flipped (params)
     params['prob_thisdis_given_AI_neg'] = get_prob_thisdis_given_AI_neg (aDiseaseTree, params['prob_pos_i_neg_higher_AIs'])
     params['probnondis_thisgroup_givenneg'] = get_probnondis_thisgroup_givenneg(aDiseaseTree,  params['prob_pos_i_neg_higher_AIs'])
     params['probs_for_waittime_conversion'] = get_probs_for_waittime_conversion (aDiseaseTree, params['prob_thisdis_given_AI_pos_flipped'], params['prob_pos_i_neg_higher_AIs'])

@@ -79,8 +79,8 @@ def get_theory_waitTime (params, aHierarchy):
     #     theories['fifo'][aclass] = get_theory_waitTime_fifo_preresume (aclass, 'fifo', params)
     
     ## For priority, there are interrupting, positive, and negative
-    #theories['priority'] = get_all_waitTime_preresume (params, aHierarchy) if params['isPreemptive'] else \
-                           #get_all_waitTime_priority_nonpreemptive (params, aHierarchy)
+    theories['priority'] = get_all_waitTime_preresume (params, aHierarchy) if params['isPreemptive'] else \
+                           get_all_waitTime_priority_nonpreemptive (params, aHierarchy)
     
     ## For hierarchy, no interrupting class at all
     theories['hierarchical'] = aHierarchy.predict_mean_wait_time (params) if params['isPreemptive'] else \
@@ -104,10 +104,13 @@ def get_all_waitTime_preresume (params, aHierarchy):
     '''
 
     priority = {}
-    for aclass in ['interrupting', 'positive', 'negative']:
+    for aclass in ['interrupting', 'positive']:
         priority[aclass] = get_theory_waitTime_fifo_preresume (aclass, 'preresume', params)
-                            
-    ## Now, calculate the wait-time for each diseased cases
+
+    _, theory_neg = aHierarchy._predict (params, keep_ai='all', pclass='negative')
+    priority['negative'] = theory_neg
+
+    ### Now, calculate the wait-time for each diseased cases
     for disease, group in zip (aHierarchy.diseaseNames, aHierarchy.groupNames):
         posWeight, negWeight = aHierarchy.get_posNegWeights (params, disease, group)
         priority[disease] = priority['positive']*posWeight + priority['negative']*negWeight
@@ -258,8 +261,6 @@ def get_theory_qlength_fifo_preresume (aclass, qtype, params):
 
     return None, None
 
-# Commenting out this version in case we need to return to it. It works as long as there are not multiple diseases per group.
-
 def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
 
     ''' Function to calculate wait-time for hierarchical-NP queue introduced
@@ -315,52 +316,54 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
     arr = aHierarchy.groupNames
     _, idx = numpy.unique(arr, return_index=True)
     unique_groupNames_array = arr[numpy.sort(idx)]
+
     for i in range(len(unique_groupNames_array)):
         groupname = unique_groupNames_array[i]
-        # get read times for all diseases in group (excluding non-diseased)
+        # Get read times for all diseases in group (excluding non-diseased)
         data_dict_readtimes = params['meanServiceTimes'][groupname]
         keys = list(data_dict_readtimes.keys())[:-1]
         # Extract the corresponding values
         dis_readtimes = [data_dict_readtimes[key] for key in keys]
         dis_readtimes = numpy.array(dis_readtimes)
-        # get non-diseased read time
+        # Get non-diseased read time
         nondis_readtime = params['meanServiceTimes'][groupname]['non-diseased']
         ## Get the second moments
         ##   E[X^2] = sum_i (pi * 2 / ratei**2) = sum_i (pi * 2 * timei**2), with i = diseased vs non-diseased
         dis_2nd_moment_factors = [2 * dis_readtime**2 for dis_readtime in dis_readtimes]
         nondis_2nd_moment_factor = 2 * nondis_readtime**2
-        groupProb = params['diseaseGroups'][groupname]['groupProb']
-
-        for diseasename in params['diseaseGroups'][groupname]['diseaseNames']: #fix AI a_i (if none corresponding to disease, Sp = 1, Se = 0)
-            ## probdis_givenpos_array below accesses the array of probabilities P(diseased b_j | a_i + subgroup), looping through j, for fixed AI a_i.
+        for diseasename in params['diseaseGroups'][groupname]['diseaseNames']: #Fix AI a_i. If none corresponding to disease, Sp = 1, Se = 0 in all that follows.
+            ## Access the array probdis_givenpos_array of probabilities P(diseased b_j | a_i + subgroup), looping through diseases b_j in group, for fixed AI a_i.
             probdis_givenpos_dict = params['prob_thisdis_given_AI_pos'][groupname][diseasename]
             keys = list(probdis_givenpos_dict.keys())[:-1]
             probdis_givenpos_array = [probdis_givenpos_dict[key] for key in keys]
             probdis_givenpos_array = numpy.array(probdis_givenpos_array)
-            # probnondis_givenpos = 1 - sum_{diseases j in group i} P(diseased b_j | a_i + subgroup) = P(nondis | a_i + subgroup)
+            ## Get P(nondis | a_i + subgroup) = 1 - sum_{diseases j in group i} P(diseased b_j | a_i + subgroup).
             probnondis_givenpos = 1-sum(probdis_givenpos_array)
-            # append to effective mean for AI-i + group: P(diseased b_j | a_i + subgroup) * (readtime b_j) + P(non-dis | a_i + subgroup) * (nondis readtime)
-            pos_means.append(sum(dis_readtimes * probdis_givenpos_array) + nondis_readtime * probnondis_givenpos)
-            # get affective second moment
+            ## Append to effective mean for AI-i + group: P(diseased b_j | a_i + subgroup) * (readtime b_j) + P(non-dis | a_i + subgroup) * (nondis readtime)
+            pos_mean = sum(dis_readtimes * probdis_givenpos_array) + nondis_readtime * probnondis_givenpos
+            pos_means.append(pos_mean)
+            #  Get effective second moment
             pos_2nd_moment.append(sum(dis_2nd_moment_factors * probdis_givenpos_array) + nondis_2nd_moment_factor * probnondis_givenpos)
-            ## Get probability of AI a_i positive across whole population
+            ## Get probability of a_i + subgroup across whole population. This takes into account the fact that higher-ranked AIs within the same group should be negative.
             prob_pos_group = params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
             prob_pos_groups.append(prob_pos_group)
-            print('diseaseName, prob_pos_group', diseasename, prob_pos_group)
-            ## Get arrival rate for patients with this specific disease 
+            ## Get arrival rate for patients in this a_i + subgroup 
             arrival_rate = prob_pos_group * params['arrivalRates']['non-interrupting']
             arrival_rates.append(arrival_rate)
 
-        ## probdis_givenneg accesses the array of probabilities P(diseased b_j | a- subgroup), looping through j
+        ## Now that we have looped through all AI+ subgroups within the group, deal with AI- case.
+        ## Probdis_givenneg accesses the array of probabilities P(diseased b_j | AI - subgroup), looping through diseases b_j.
         probdis_givenneg_dict = params['prob_thisdis_given_AI_neg'][groupname] 
         keys = list(probdis_givenneg_dict.keys())[:]
         probdis_givenneg_array = [probdis_givenneg_dict[key] for key in keys]
         probdis_givenneg_array = numpy.array(probdis_givenneg_array)
-        ## prob nondis_thisgroup_givenneg = P(non-dis, current group | a- subgroup)
-        probnondis_thisgroup_givenneg = groupProb*(1-sum(probdis_givenneg_array)/groupProb)
-        # below we append P(dis b_j | a- subgroup) * (readtime b_j) + P(non-dis, current group | a- subgroup) * nondis_readtime to the AI-negative means.
-        # after looping through all the groups, we should be able to sum the entries of neg_means to get the effective read time of the entire AI-negative subgroup.
-        neg_means.append(sum(dis_readtimes * probdis_givenneg_array) + nondis_readtime * probnondis_thisgroup_givenneg)
+        ## Get P(non-dis, current group | AI- subgroup)
+        probnondis_thisgroup_givenneg = params['probnondis_thisgroup_givenneg'][groupname]
+        ## Append AI-negative mean: sum_j ( P(dis b_j | a- subgroup) * (readtime b_j) ) + P(non-dis, current group | a- subgroup) * nondis_readtime.
+        ## After looping through all the groups, we should be able to sum the entries of neg_means to get the effective read time of the entire AI-negative subgroup.
+        neg_mean = sum(dis_readtimes * probdis_givenneg_array) + nondis_readtime * probnondis_thisgroup_givenneg
+        neg_means.append(neg_mean)
+        ## Append second moment
         neg_2nd_moment.append(sum(dis_2nd_moment_factors * probdis_givenneg_array) + nondis_2nd_moment_factor * probnondis_thisgroup_givenneg)
 
     ## AI_neg_mean = effective read time [min] for AI-neg group that may have different disease types
@@ -372,22 +375,26 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
     bs = numpy.array (pos_means + [AI_neg_mean])
     cs = numpy.array (pos_2nd_moment + [AI_neg_2nd_moment])
     lambdas = numpy.array (arrival_rates + [AI_neg_arrival_rate])
+
     #  Get c (Eq 20) 
     c = sum (lambdas * cs)
+
     ## Apply Eq 21. For the highest priority, only the second summation in the denominator counts.
     ## These are the mean wait-time of each positive subgroup by each AI in each group. For group
     ## that don't have an AI, it spit out a mean wait-time all cases are at the end of a sub-system
     ## with only higher rank AI-positive diseases in front (as if other lower groups do not exist).
     wait_times = []
     for j in range(len(lambdas)):
-        wait_time = c / (2 * (1 - sum(lambdas[:j+1] * bs[:j+1]))) ## second summation
-        if j > 0: wait_time /= 1 - sum(lambdas[:j] * bs[:j])
-        wait_times.append (wait_time)
+        if lambdas[j] == 0: wait_times.append(0)
+        else:
+            wait_time = c / (2 * (1 - sum(lambdas[:j+1] * bs[:j+1]))) ## second summation
+            if j > 0: wait_time /= (1 - sum(lambdas[:j] * bs[:j]))
+            wait_times.append (wait_time)
     wait_times = numpy.array (wait_times)
 
     ## Converts the AI+/- wait time into per-disease wait-time. 
-    #probs_for_conversion[j] accesses an array of probabilities P(a_i + subgroup | diseased b_j) for all AIs a_i in the 
-    for j in range(len(wait_times)-1):
+    ## Probs_for_conversion[j] accesses an array of probabilities P(a_i + subgroup | diseased b_j) for all AIs a_i in the same group as disease b_j.
+    for j in range(len(lambdas)-1):
         diseaseName = aHierarchy.diseaseNames[j]
         groupname = aHierarchy.groupNames[j]
         disease_in_group_idx = []
@@ -396,6 +403,7 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
             disease_in_group_idx.append(index)
         probs_for_conversion = params['probs_for_waittime_conversion']
         probs_for_conversion_thisdis = probs_for_conversion[diseaseName]
+
         diseased_wait_times.append(sum(wait_times[disease_in_group_idx] * probs_for_conversion_thisdis) + wait_times[-1] * (1-sum(probs_for_conversion_thisdis)))
     
     ## Populate results into a dictionary
@@ -403,360 +411,10 @@ def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
     for index, (disease, vendor, wait_time) in enumerate (zip (aHierarchy.diseaseNames, aHierarchy.AINames, diseased_wait_times)):
         priority[disease] = {'diseased':wait_time}
         priority[disease]['negative'] = wait_times[-1]
-        if vendor is None: continue
+        #if vendor is None: continue
         priority[disease]['positive'] = wait_times[index]
-        
+
     return priority
-
-
-# Commenting out this version in case we need to return to it. It works as long as there are not multiple diseases per group.
-
-# def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
-
-#     ''' Function to calculate wait-time for hierarchical-NP queue introduced
-#         by Michelle based on Eq 21 in "Effects of the Queue Discipline on
-#         System Performance" by Raicu et al 2023:
-#             https://doi.org/10.3390/appliedmath3010003
-        
-#                                               sum_i lambda'_i x c_i
-#             mean wait-time = -------------------------------------------------------------
-#               for class i     2 x (1 - sum_j lamda'_j x b_j) x (1 - sum_j lamda'_j x b_j)
-        
-#         The numerator is based on Eq 20 of the papr. i goes from 1 to k
-#         priority classes. c_i is the 2nd moment of service time distribution.
-#         In the denominator, j in the first summation goes from 1 to i - 1.
-#         In the second summarion, j goes from 1 to i. i = 1 has the highest
-#         priority. b_j is the is the 1st moment (i.e. mean) service rate of
-#         class j. Lambda'_j is the individual arrival rate for the j-th class.
-
-#         In our case, AI+ patients in every group with AI form a priority class
-#         ranked by the disease rank. For each group with AI, we need to collect
-#         the first and second moments of service time distribution for the
-#         positive patients by that AI. Because it includes both diseased and
-#         non-diseased, the service time distribution is a hyperexponential
-#         distribution with probabilities of PPV (or 1-NPV) and 1-PPV (or NPV)
-#         to take into account the FP and FN as well. 
-
-#         This method can calculate the mean wait-time of each positive subgroup
-#         within each group with AI. It is currently limited to scenarios where
-#         each group has only 1 disease and at most 1 AI.
-
-#         inputs
-#         ------
-#         params (dict): dictionary with user inputs
-#         aHierarchy (hierarchy): hierarchy of ranked priority classes
-
-#         outputs
-#         -------
-#         theories (dict): theorectical predictions for all priority and disease classes.
-#     '''
-    
-#     ## Initialize holders: these values are ordered by disease rank
-#     Ses, Sps, gp_probs = [], [], []    
-#     #  To store the first and second moments per priority class.
-#     neg_means, neg_2nd_moment = [], [] 
-#     pos_means, pos_2nd_moment = [], []
-#     #  To store the positive rate per priority class w.r.t. whole population
-#     prob_pos_groups = []
-#     #  To store individual arrival rate of positive cases by the 1 AI in the group
-#     arrival_rates = [] 
-#     #  To store the fraction of target disease (in this priority class)
-#     #  within the overall AI negative class
-#     prob_thisdis_given_negs = []
-
-#     ## Loop through all groups, get info for each AI-positive subgroup
-#     for i in range(len(aHierarchy.groupNames)):
-#         groupname = aHierarchy.groupNames[i]
-#         diseasename = aHierarchy.diseaseNames[i]
-#         vendorname = aHierarchy.AINames[i]
-#         ## Get disease prob within the group and group probability
-#         dis_idx = params['diseaseGroups'][groupname]['diseaseNames'].index (diseasename)
-#         dis_prob = params['diseaseGroups'][groupname]['diseaseProbs'][dis_idx]
-#         gp_prob = params['diseaseGroups'][groupname]['groupProb']
-#         gp_probs.append(gp_prob)
-#         ## Get AI vendor performance. If no vendor in this group,
-#         ## Se/Sp = 0, 1 - all cases in this group is counted as AI-.
-#         Se, Sp = 0, 1
-#         probdis_givenpos, probdis_givenneg = 0, dis_prob
-#         probnondis_givenpos, probnondis_givenneg = 0, 1-dis_prob
-#         if vendorname is not None:
-#             Se = params['SeThreshs'][vendorname] 
-#             Sp = params['SpThreshs'][vendorname] 
-#             probdis_givenpos = params['probs_ppv_npv']['ppv'][groupname][vendorname]
-#             probdis_givenneg = 1 - params['probs_ppv_npv']['npv'][groupname][vendorname]
-#             probnondis_givenpos = 1 - params['probs_ppv_npv']['ppv'][groupname][vendorname]
-#             probnondis_givenneg = params['probs_ppv_npv']['npv'][groupname][vendorname]            
-#         Ses.append(Se)
-#         Sps.append(Sp)
-#         ## Get effective reading time for positive and negative patients
-#         ##        1      PPV     1-PPV
-#         ##  e.g. ---- = ----- + -------
-#         ##        u+     uD       uND
-#         dis_readtime = params['meanServiceTimes'][groupname][diseasename]
-#         nondis_readtime = params['meanServiceTimes'][groupname]['non-diseased']
-#         pos_means.append(dis_readtime * probdis_givenpos + nondis_readtime * probnondis_givenpos) 
-#         neg_means.append(dis_readtime * probdis_givenneg + nondis_readtime * probnondis_givenneg)
-#         ## Get the second moments
-#         ##   E[X^2] = sum_i (pi * 2 / ratei**2) = sum_i (pi * 2 * timei**2), with i = diseased vs non-diseased
-#         dis_2nd_moment_factor = 2 * dis_readtime**2
-#         nondis_2nd_moment_factor = 2 * nondis_readtime**2
-#         pos_2nd_moment.append(dis_2nd_moment_factor * probdis_givenpos + nondis_2nd_moment_factor * probnondis_givenpos)
-#         neg_2nd_moment.append(dis_2nd_moment_factor * probdis_givenneg + nondis_2nd_moment_factor * probnondis_givenneg)
-#         ## Get probability of positive across whole population
-#         prob_pos_group = (Se * dis_prob + (1 - Sp) * (1 - dis_prob)) * gp_prob
-#         prob_pos_groups.append(prob_pos_group)
-#         ## Get arrival rate for patients with this specific disease 
-#         arrival_rate = prob_pos_group * params['arrivalRates']['non-interrupting']
-#         arrival_rates.append(arrival_rate)
-#         ## Among all AI-negative, what is the fraction of each disease 
-#         prob_thisdis_given_neg = gp_prob * (Sp * (1 - dis_prob) + (1 - Se) * dis_prob)
-#         prob_thisdis_given_negs.append(prob_thisdis_given_neg)
-
-#     ## For the AI-negative group (i.e. cases flagged as negative by all AIs).
-#     ## Make use of neg_means, neg_2nd_moment, and prob_thisdis_given_negs
-#     prob_thisdis_given_negs = numpy.array(prob_thisdis_given_negs) / (1 - sum(prob_pos_groups)) 
-#     ## AI_neg_means = effective read time [min] for AI-neg group that may have different disease types
-#     AI_neg_mean = sum(prob_thisdis_given_negs * numpy.array(neg_means))
-#     AI_neg_2nd_moment  = sum(prob_thisdis_given_negs * numpy.array(neg_2nd_moment))
-#     AI_neg_arrival_rate = params['arrivalRates']['negative']
-
-#     ## Calculation of wait-time
-#     bs = numpy.array (pos_means + [AI_neg_mean])
-#     cs = numpy.array (pos_2nd_moment + [AI_neg_2nd_moment])
-#     lambdas = numpy.array (arrival_rates + [AI_neg_arrival_rate])
-#     #  Get c (Eq 20) 
-#     c = sum (lambdas * cs)
-#     ## Apply Eq 21. For the highest priority, only the second summation in the denominator counts.
-#     ## These are the mean wait-time of each positive subgroup by each AI in each group. For group
-#     ## that don't have an AI, it spit out a mean wait-time all cases are at the end of a sub-system
-#     ## with only higher rank AI-positive diseases in front (as if other lower groups do not exist).
-#     wait_times = []
-#     for j in range(len(lambdas)):
-#         wait_time = c / (2 * (1 - sum(lambdas[:j+1] * bs[:j+1]))) ## second summation
-#         if j > 0: wait_time /= 1 - sum(lambdas[:j] * bs[:j])
-#         wait_times.append (wait_time)
-#     wait_times = numpy.array (wait_times)
-
-#     ## Converts the AI+/- wait time into per-disease wait-time. 
-#     Ses, Sps, gp_probs = numpy.array (Ses), numpy.array (Sps), numpy.array (gp_probs)
-#     diseased_wait_times = wait_times[:-1] * Ses + wait_times[-1] * (1 - Ses)
-    
-#     ## Populate results into a dictionary
-#     priority = {}
-#     for index, (disease, vendor, wait_time) in enumerate (zip (aHierarchy.diseaseNames, aHierarchy.AINames, diseased_wait_times)):
-#         priority[disease] = {'diseased':wait_time}
-#         priority[disease]['negative'] = wait_times[-1]
-#         if vendor is None: continue
-#         priority[disease]['positive'] = wait_times[index]
-        
-#     return priority
-
-# fills in AIs that exist in group for diseases that do not have an AI
-# def fill_missing_vendors(groupnames, diseasenames, vendornames):
-#     group_to_vendor = {}
-#     vendor_flag = 0
-
-#     for group, vendor in zip(groupnames, vendornames):
-#         if vendor is not None:
-#             group_to_vendor[group] = vendor
-
-#     filled_vendornames = []
-#     for group, vendor in zip(groupnames, vendornames):
-#         if vendor is None:
-#             vendor_flag = 1
-#             filled_vendornames.append(group_to_vendor.get(group, None))
-#         else:
-#             filled_vendornames.append(vendor)
-    
-#     return vendor_flag, filled_vendornames
-
-
-######  version that should work for multiple diseases per group
-# def get_all_waitTime_hierarchical_nonpreemptive (params, aHierarchy):
-
-#     ''' Function to calculate wait-time for hierarchical-NP queue introduced
-#         by Michelle based on Eq 21 in "Effects of the Queue Discipline on
-#         System Performance" by Raicu et al 2023:
-#             https://doi.org/10.3390/appliedmath3010003
-        
-#                                               sum_i lambda'_i x c_i
-#             mean wait-time = -------------------------------------------------------------
-#               for class i     2 x (1 - sum_j lamda'_j x b_j) x (1 - sum_j lamda'_j x b_j)
-        
-#         The numerator is based on Eq 20 of the papr. i goes from 1 to k
-#         priority classes. c_i is the 2nd moment of service time distribution.
-#         In the denominator, j in the first summation goes from 1 to i - 1.
-#         In the second summarion, j goes from 1 to i. i = 1 has the highest
-#         priority. b_j is the is the 1st moment (i.e. mean) service rate of
-#         class j. Lambda'_j is the individual arrival rate for the j-th class.
-
-#         In our case, AI+ patients in every group with AI form a priority class
-#         ranked by the disease rank. For each group with AI, we need to collect
-#         the first and second moments of service time distribution for the
-#         positive patients by that AI. Because it includes both diseased and
-#         non-diseased, the service time distribution is a hyperexponential
-#         distribution with probabilities of PPV (or 1-NPV) and 1-PPV (or NPV)
-#         to take into account the FP and FN as well. 
-
-#         This method can calculate the mean wait-time of each positive subgroup
-#         within each group with AI. It is currently limited to scenarios where
-#         each group has only 1 disease and at most 1 AI.
-
-#         inputs
-#         ------
-#         params (dict): dictionary with user inputs
-#         aHierarchy (hierarchy): hierarchy of ranked priority classes
-
-#         outputs
-#         -------
-#         theories (dict): theorectical predictions for all priority and disease classes.
-#     '''
-    
-#     ## Initialize holders: these values are ordered by disease rank
-#     Ses, Sps, gp_probs = [], [], []    
-#     #  To store the first and second moments per priority class.
-#     neg_means, neg_2nd_moment = [], [] 
-#     pos_means, pos_2nd_moment = [], []
-#     #  To store the positive rate per priority class w.r.t. whole population
-#     prob_pos_groups = []
-#     #  To store individual arrival rate of positive cases by the 1 AI in the group
-#     arrival_rates = [] 
-#     #  To store the fraction of target disease (in this priority class)
-#     #  within the overall AI negative class
-#     prob_thisgroup_given_negs = []
-#     no_vendor_indices = []
-
-#     ## Loop through all groups, get info for each AI-positive subgroup
-#     for i in range(len(aHierarchy.groupNames)):
-#         groupname = aHierarchy.groupNames[i]
-#         diseasename = aHierarchy.diseaseNames[i]
-#         vendorname = aHierarchy.AINames[i]
-#         ## Get disease prob within the group and group probability
-#         dis_idx = params['diseaseGroups'][groupname]['diseaseNames'].index (diseasename)
-#         dis_prob = params['diseaseGroups'][groupname]['diseaseProbs'][dis_idx]
-#         gp_prob = params['diseaseGroups'][groupname]['groupProb']
-#         gp_probs.append(gp_prob)
-#         ## Get AI vendor performance. If no vendor in this group,
-#         ## Se/Sp = 0, 1 - all cases in this group is counted as AI-.
-#         Se, Sp = 0, 1
-#         probdis_givenpos, probdis_givenneg = 0, dis_prob
-#         probnondis_givenpos, probnondis_givenneg = 0, 1-dis_prob
-#         groupnames = aHierarchy.groupNames
-#         diseasenames = aHierarchy.diseaseNames
-#         vendornames = aHierarchy.AINames
-#         vendor_flag, filled_vendornames = fill_missing_vendors(groupnames, diseasenames, vendornames)
-
-#         if aHierarchy.AINames[i] is not None or (aHierarchy.AINames[i] is None and filled_vendornames[i] is None): #If current disease has a vendor OR does not have a vendor but there is no other vendor in the group
-#             if aHierarchy.AINames[i] is not None:
-#                 Se = params['SeThreshs'][vendorname] 
-#                 Sp = params['SpThreshs'][vendorname]
-#                 probdis_givenpos = params['probs_ppv_npv']['ppv'][groupname][vendorname]
-#                 probdis_givenneg = 1 - params['probs_ppv_npv']['npv'][groupname][vendorname]
-#             Ses.append(Se)
-#             Sps.append(Sp)
-#             dis_readtime = params['meanServiceTimes'][groupname][diseasename]
-#             nondis_readtime = params['meanServiceTimes'][groupname]['non-diseased']
- 
-#             # Initialize holders for looping through other diseases in the group (if they exist)
-#             other_probs_givenpos = []
-#             other_probs_givenneg = []
-#             other_probs_readtime = [] # to get read time and 
-#             other_probs_secondmoments = []
-#             other_dis_probs = []
-#             prob_thisgroup_given_neg = 0
-#             for otherdis_in_group in params['diseaseGroups'][groupname]['diseaseNames']:
-#                 if otherdis_in_group != diseasename:
-#                     dis_idx = params['diseaseGroups'][groupname]['diseaseNames'].index(otherdis_in_group)
-#                     this_dis_prob = params['diseaseGroups'][groupname]['diseaseProbs'][dis_idx] # get prevalence of current disease
-#                     other_dis_probs.append(this_dis_prob)
-#                     other_probs_readtime.append(params['meanServiceTimes'][groupname][otherdis_in_group])
-#                     other_probs_secondmoments.append(2 * params['meanServiceTimes'][groupname][otherdis_in_group]**2)
-#                     other_probs_givenpos.append((1 - Sp) * (this_dis_prob/(1-dis_prob)) / (Se * dis_prob + (1 - Sp) * (1 - dis_prob))) # get probability that positive AI reading came from current disease
-#                     other_probs_givenneg.append((1 - Se) * (this_dis_prob/(1-dis_prob)) / ((1 - Se) * dis_prob + Sp * (1 - dis_prob))) # get probability that negative AI reading came from current disease
-#                     prob_thisgroup_given_neg += gp_prob * this_dis_prob  # Variable keeps track of, among all AI-negative, what is the fraction of each group. 
-
-#             # get probability of non diseased given AI positive / AI negative reading
-#             probnondis_givenpos = 1 - sum(other_probs_givenpos) - probdis_givenpos
-#             probnondis_givenneg = 1 - sum(other_probs_givenneg) - probdis_givenneg
-
-#             # Get effective reading times
-#             pos_means.append(dis_readtime * probdis_givenpos + sum(numpy.array(other_probs_readtime)*numpy.array(other_probs_givenpos)) + nondis_readtime * probnondis_givenpos) 
-#             neg_means.append(dis_readtime * probdis_givenneg + sum(numpy.array(other_probs_readtime)*numpy.array(other_probs_givenneg)) + nondis_readtime * probnondis_givenneg)
-#             ## Get the second moments
-#             ##   E[X^2] = sum_i (pi * 2 / ratei**2) = sum_i (pi * 2 * timei**2), with i = diseased vs non-diseased
-#             dis_2nd_moment_factor = 2 * dis_readtime**2
-#             nondis_2nd_moment_factor = 2 * nondis_readtime**2
-#             pos_2nd_moment.append(dis_2nd_moment_factor * probdis_givenpos + sum(numpy.array(other_probs_secondmoments)*numpy.array(other_probs_givenpos)) + nondis_2nd_moment_factor * probnondis_givenpos)
-#             neg_2nd_moment.append(dis_2nd_moment_factor * probdis_givenneg + sum(numpy.array(other_probs_secondmoments)*numpy.array(other_probs_givenneg)) + nondis_2nd_moment_factor * probnondis_givenneg)
-
-#             ## Get probability of positive across whole population
-#             prob_pos_group = (Se * dis_prob + (1 - Sp) * (1 - dis_prob)) * gp_prob
-#             prob_pos_groups.append(prob_pos_group)
-#             ## Get arrival rate for patients with this specific disease 
-#             arrival_rate = prob_pos_group * params['arrivalRates']['non-interrupting']
-#             arrival_rates.append(arrival_rate)
-#             ## Among all AI-negative, what is the fraction of each group -- add original disease that has a vendor
-#             prob_thisgroup_given_neg += gp_prob * (Sp * (1 - dis_prob) + (1 - Se) * dis_prob)
-#             prob_thisgroup_given_negs.append(prob_thisgroup_given_neg)
-
-#         else: # If disease does not have a vendor but there is another vendor in the group
-#             # 'Fill in' corresponding vendor in group and get Se / Sp
-#             no_vendor_indices.append(i)
-#             vendorname = filled_vendornames[i] 
-#             Se = params['SeThreshs'][vendorname] 
-#             Sp = params['SpThreshs'][vendorname] 
-#             Ses.append(Se)
-#             Sps.append(Sp)
-#             pos_means.append(0)
-#             pos_2nd_moment.append(0)
-#             arrival_rates.append(0)
-
-#     ## For the AI-negative group (i.e. cases flagged as negative by all AIs).
-#     ## Make use of neg_means, neg_2nd_moment, and prob_thisdis_given_negs
-#     prob_thisgroup_given_negs = numpy.array(prob_thisgroup_given_negs) / sum(prob_thisgroup_given_negs) 
-#     ## AI_neg_means = effective read time [min] for AI-neg group that may have different disease types
-#     AI_neg_mean = sum(prob_thisgroup_given_negs * numpy.array(neg_means))
-#     AI_neg_2nd_moment  = sum(prob_thisgroup_given_negs * numpy.array(neg_2nd_moment))
-#     AI_neg_arrival_rate = (1-sum(prob_pos_groups)) * params['arrivalRates']['non-interrupting']
-
-#     ## Calculation of wait-time
-#     bs = numpy.array (pos_means + [AI_neg_mean])
-#     cs = numpy.array (pos_2nd_moment + [AI_neg_2nd_moment])
-#     lambdas = numpy.array (arrival_rates + [AI_neg_arrival_rate])
-
-#     #  Get c (Eq 20) 
-#     c = sum (lambdas * cs)
-#     ## Apply Eq 21. For the highest priority, only the second summation in the denominator counts.
-#     ## These are the mean wait-time of each positive subgroup by each AI in each group. For group
-#     ## that don't have an AI, it spit out a mean wait-time all cases are at the end of a sub-system
-#     ## with only higher rank AI-positive diseases in front (as if other lower groups do not exist).
-#     wait_times = []
-#     for j in range(len(lambdas)):
-#         wait_time = c / (2 * (1 - sum(lambdas[:j+1] * bs[:j+1]))) ## second summation
-#         if j > 0: wait_time /= 1 - sum(lambdas[:j] * bs[:j])
-#         wait_times.append (wait_time)
-#     wait_times = numpy.array (wait_times)
-
-#     ## Converts the AI+/- wait time into per-disease wait-time. 
-#     Ses, Sps, gp_probs = numpy.array (Ses), numpy.array (Sps), numpy.array (gp_probs)
-#     diseased_wait_times = wait_times[:-1] * Ses + wait_times[-1] * (1 - Ses)
-
-#     # Slightly different calculation for diseased wait times for those that do not have a vendor.
-#     for i in no_vendor_indices:
-#         current_vendor = filled_vendornames[i]
-#         index_of_vendor = filled_vendornames.index(current_vendor)
-#         Sp = params['SpThreshs'][current_vendor] 
-#         diseased_wait_times[i] = wait_times[index_of_vendor] * (1 - Sp) + wait_times[-1] * Sp
-    
-#     ## Populate results into a dictionary
-#     priority = {}
-#     for index, (disease, vendor, wait_time) in enumerate (zip (aHierarchy.diseaseNames, aHierarchy.AINames, diseased_wait_times)):
-#         priority[disease] = {'diseased':wait_time}
-#         priority[disease]['negative'] = wait_times[-1]
-#         if vendor is None: continue
-#         priority[disease]['positive'] = wait_times[index]
-        
-#     return priority
 
 def get_all_waitTime_priority_nonpreemptive (params, aHierarchy):
 
@@ -776,25 +434,51 @@ def get_all_waitTime_priority_nonpreemptive (params, aHierarchy):
     '''
     
     pos_mean, pos_2nd_moment = 0, 0
-    for gpname, probinfo in params['probs_condByPriority']['positive'].items():
-        for disname, prob in probinfo.items():
-            readtime = params['meanServiceTimes'][gpname][disname]
-            pos_mean += prob * readtime
-            pos_2nd_moment += 2 * readtime**2 * prob
-    
     neg_mean, neg_2nd_moment = 0, 0
-    for gpname, probinfo in params['probs_condByPriority']['negative'].items():
-        for disname, prob in probinfo.items():
-            readtime = params['meanServiceTimes'][gpname][disname]
-            neg_mean += prob * readtime
-            neg_2nd_moment += 2 * readtime**2 * prob
+    arr = aHierarchy.groupNames
+    _, idx = numpy.unique(arr, return_index=True)
+    unique_groupNames_array = arr[numpy.sort(idx)]
 
-    ## Calculation of wait-time
+    ## Same idea as function in hierarchical non-preemptive theory, but only one comprehensive AI+ group rather than
+    ## an array of AI+ subgroups for each AI.
+    for gpname in unique_groupNames_array:
+        for disname in params['diseaseGroups'][gpname]['diseaseNames']:
+            probdis_givenpos_dict = params['prob_thisdis_given_AI_pos'][gpname][disname]
+            keys = list(probdis_givenpos_dict.keys())[:-1]
+            probdis_givenpos_array = [probdis_givenpos_dict[key] for key in keys]
+            probdis_givenpos_array = numpy.array(probdis_givenpos_array)
+            probnondis_givenpos = 1-sum(probdis_givenpos_array)
+            data_dict_readtimes = params['meanServiceTimes'][gpname]
+            keys = list(data_dict_readtimes.keys())[:-1]
+            dis_readtimes = [data_dict_readtimes[key] for key in keys]
+            dis_readtimes = numpy.array(dis_readtimes)
+            nondis_readtime = params['meanServiceTimes'][gpname]['non-diseased']
+            dis_2nd_moment_factors = [2 * dis_readtime**2 for dis_readtime in dis_readtimes]
+            nondis_2nd_moment_factor = 2 * nondis_readtime**2
+
+            ## Below is the main difference from the hierarchical function.
+            ## The AI+ mean is comprised of the mean for all AI+ subgroups. Prob_pos_group is the weight P(AI+ Y | AI+).
+            prob_pos_group = params['prob_pos_i_neg_higher_AIs'][gpname][disname] / (1-params['prob_AI_neg_group'])
+            pos_mean += (sum(prob_pos_group * probdis_givenpos_array * dis_readtimes) + prob_pos_group * probnondis_givenpos * nondis_readtime)
+            pos_2nd_moment += (sum(prob_pos_group * probdis_givenpos_array * dis_2nd_moment_factors) + prob_pos_group * probnondis_givenpos * nondis_2nd_moment_factor)
+        
+        ## Below code for AI- subgroup is same as in hierarchical non-preemptive function.
+        probdis_givenneg_dict = params['prob_thisdis_given_AI_neg'][gpname] 
+        keys = list(probdis_givenneg_dict.keys())[:]
+        probdis_givenneg_array = [probdis_givenneg_dict[key] for key in keys]
+        probdis_givenneg_array = numpy.array(probdis_givenneg_array)
+        probnondis_thisgroup_givenneg = params['probnondis_thisgroup_givenneg'][gpname]
+        neg_mean += sum(dis_readtimes * probdis_givenneg_array) + nondis_readtime * probnondis_thisgroup_givenneg
+        neg_2nd_moment += sum(dis_2nd_moment_factors * probdis_givenneg_array) + nondis_2nd_moment_factor * probnondis_thisgroup_givenneg
+
+    ## Calculation of wait-time. Here, the 'b' and 'c' arrays are only comprised of the AI+ means/second moments and AI- means/second moments.
     bs = numpy.array ([pos_mean, neg_mean])
     cs = numpy.array ([pos_2nd_moment, neg_2nd_moment])
     lambdas = numpy.array ([params['arrivalRates']['positive'], params['arrivalRates']['negative']])
+
     #  Get c (Eq 20) 
     c = sum (lambdas * cs)
+
     ## Apply Eq 21.
     wait_times = []
     for j in range(len(lambdas)):
@@ -817,8 +501,11 @@ def get_all_waitTime_priority_nonpreemptive (params, aHierarchy):
                 'diseased': diseased_wait_times}
                             
     ## Now, calculate the wait-time for each diseased cases
-    for disease, group in zip (aHierarchy.diseaseNames, aHierarchy.groupNames):
-        posWeight, negWeight = aHierarchy.get_posNegWeights (params, disease, group)
+    for disease in aHierarchy.diseaseNames:
+        probs_for_conversion = params['probs_for_waittime_conversion']
+        probs_for_conversion_thisdis = probs_for_conversion[disease]
+        posWeight = sum(probs_for_conversion_thisdis)
+        negWeight = 1-posWeight
         priority[disease] = priority['positive']*posWeight + priority['negative']*negWeight
         
     return priority
@@ -844,14 +531,14 @@ def get_state_pdf_MMn (ns, s, aLambda, aMu):
 
     rho = aLambda / s / aMu
     
-    p0_first = numpy.sum ([(s*rho)**(i)/numpy.math.factorial (i) for i in numpy.linspace (0, s-1, s)])
-    p0_second = (s*rho)**s / numpy.math.factorial  (s) / (1-rho)
+    p0_first = numpy.sum ([(s*rho)**(i)/numpy.math.factorial (int(i)) for i in numpy.linspace (0, s-1, s)])
+    p0_second = (s*rho)**s / numpy.math.factorial  (int(s)) / (1-rho)
     p0 = 1/(p0_first + p0_second)
     
     pred = []
     for n in ns:
-        p = (s*rho)**n * p0 / numpy.math.factorial  (n) if n <= s else \
-            s**s*rho**n * p0 / numpy.math.factorial  (s)
+        p = (s*rho)**n * p0 / numpy.math.factorial  (int(n)) if n <= s else \
+            s**s*rho**n * p0 / numpy.math.factorial  (int(s))
         pred.append (p)
     
     return numpy.array (pred)
