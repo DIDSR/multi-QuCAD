@@ -423,6 +423,24 @@ class simulator (object):
         '''           
         
         return self._subgroup_records[qtype]['negative']
+    
+    def get_hier_class_records (self, qtype, key):
+
+        ''' Public function to obtain only AI positive patient
+            instances excluding padding patients from either
+            with or without CADt scenarios. 
+        
+            input
+            -----
+            qtype (str): either 'fifo' for without-CADt scenario
+                         or 'priority' for with-CADt scenario
+            
+            output
+            ------
+            patients (list): patients from AI positive subgroups only
+        '''         
+        
+        return self._subgroup_records[qtype][key]
 
     def get_n_patients_in_system (self, gtype):
         
@@ -483,7 +501,7 @@ class simulator (object):
     ## +---------------------------------------------
     ## | Private functions to simulate queues
     ## +---------------------------------------------
-    def _count_nPatients_in_queue (self, original, noCADt=False):
+    def _count_nPatients_in_queue (self, original, noCADt=False, hierFlag=False):
 
         ''' Count the number of patients currently in the queue. This
             function is meant to be called right before a new patient
@@ -529,6 +547,7 @@ class simulator (object):
 
         ## For without CADt scenario, only two priority classes:
         ## interrupting and non-interrupting. 
+
         if noCADt:
             while not original.empty():
                 nAll += 1
@@ -551,31 +570,75 @@ class simulator (object):
     
         ## For with CADt scenario, there are three priority classes:
         ## interrupting and positive and negative. 
-        while not original.empty():
-            nAll += 1
-            # Pull out the patient instance
-            p = original.get()[2]
-            # Emergency class has the highest priority i.e. 1 
-            if p.is_interrupting:
-                nEmergency += 1
-                pclass = 1
-            # Positive class has a middle priority i.e. 2
-            elif p.priority_class == 2:
-                nNonEmergency += 1
-                nClass1 += 1
-                pclass = 2
-            # Negative class has the lowest priority i.e. 3
-            elif p.priority_class == 99:
-                nNonEmergency += 1
-                nClass2 += 1
-                pclass = 99
-            # Copy this patient to the new queue. Prioritized based
-            # on patient's priority class, and then by its arrival
-            # time. The last entry is the patient instance.                    
-            copied.put ((pclass, p.trigger_time, p))
-    
-        return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
-                        'positive':nClass1, 'negative':nClass2}
+        if noCADt == False: #and hierFlag == False:
+            while not original.empty():
+                nAll += 1
+                # Pull out the patient instance
+                p = original.get()[2]
+                # Emergency class has the highest priority i.e. 1 
+                if p.is_interrupting:
+                    nEmergency += 1
+                    pclass = 1
+                # Positive class has a middle priority i.e. 2
+                elif p.priority_class == 2:
+                    nNonEmergency += 1
+                    nClass1 += 1
+                    pclass = 2
+                # Negative class has the lowest priority i.e. 3
+                elif p.priority_class == 99:
+                    nNonEmergency += 1
+                    nClass2 += 1
+                    pclass = 99
+                # Copy this patient to the new queue. Prioritized based
+                # on patient's priority class, and then by its arrival
+                # time. The last entry is the patient instance.                    
+                copied.put ((pclass, p.trigger_time, p))
+        
+            return copied, {'all':nAll, 'non-interrupting':nNonEmergency, 'interrupting':nEmergency,
+                            'positive':nClass1, 'negative':nClass2}
+        
+        dict_hier = {}
+        for key in self.hierDict.keys():
+            if key is not None:
+                dict_hier[key] = 0
+
+        if noCADt == False and hierFlag == True:
+            while not original.empty():
+                nAll += 1
+                # Pull out the patient instance
+                p = original.get()[2]
+
+                # Emergency class has the highest priority i.e. 1 
+                if p.is_interrupting:
+                    nEmergency += 1
+                    pclass = 1
+                
+                for key in self.hierDict.keys():
+                # Hierarchy classes: middle priority
+                    if p.priority_class == self.hierDict[key]:
+                        nNonEmergency += 1
+                        nClass1 += 1
+                        dict_hier[key] +=1
+                        pclass = self.hierDict[key]
+
+                # Negative class has the lowest priority i.e. 3
+                    elif p.priority_class == 99:
+                        nNonEmergency += 1
+                        nClass2 += 1
+                        pclass = 99
+                # Copy this patient to the new queue. Prioritized based
+                # on patient's priority class, and then by its arrival
+                # time. The last entry is the patient instance.                    
+                copied.put ((pclass, p.trigger_time, p))
+
+                dict_hier['all'] = nAll
+                dict_hier['non-interrupting'] = nNonEmergency
+                dict_hier['interrupting'] = nEmergency
+                dict_hier['negative'] = nClass2
+                dict_hier['positive'] = nClass1
+        
+            return copied, dict_hier
+        
 
     def _count_nPatients (self, qtype, newArrivalTime):
         
@@ -629,11 +692,14 @@ class simulator (object):
         doctor_treating_negative    = remove_nan (numpy.array (doctor_treating_negative))
         
         ## Count the number of patients currently in the queue
-        self._aqueue[qtype], nPatients = self._count_nPatients_in_queue (self._aqueue[qtype], noCADt=qtype=='fifo')
-        
+        if qtype is not 'hierarchical':
+            self._aqueue[qtype], nPatients = self._count_nPatients_in_queue (self._aqueue[qtype], noCADt=qtype=='fifo', hierFlag=False)
+        else:
+            self._aqueue[qtype], nPatients = self._count_nPatients_in_queue (self._aqueue[qtype], noCADt=qtype=='fifo', hierFlag=True)
+
         ## Count the number of patients currently in the system
         for group, nqueue in nPatients.items():
-            
+
             # # patients in queue only
             self._n_patients[qtype][group]['queue'].append (nqueue)
             
@@ -1252,10 +1318,15 @@ class simulator (object):
         
         ## Handle each queue type correspondingly
         for qtype, records in self._patient_records.items():
+            subgroup_records[qtype] = {}
             # Define holders
             interrupting, noninterrupting = [], []
             diseased, nondiseased = [], []
             positive, negative = [], []
+
+            for key in self.hierDict.keys():
+                subgroup_records[qtype][key] = []
+
             # Trim patient records as requested
             trimmed_records = records[self.nPatientPadsStart:-self.nPatientPadsEnd]
             # Populate patient records individually to the corresponding subgroups
@@ -1276,11 +1347,18 @@ class simulator (object):
                         positive.append (p)
                     else:
                         negative.append (p)
+                for key in self.hierDict.keys():
+                    if p.hierarchy_class == self.hierDict[key]:
+                        subgroup_records[qtype][key].append(p)
             # Save to subgroup_records
-            subgroup_records[qtype] = {'all':trimmed_records,
-                                       'interrupting':interrupting, 'non-interrupting':noninterrupting,
-                                       'diseased':diseased, 'non-diseased':nondiseased,
-                                       'positive':positive, 'negative':negative} 
+
+            subgroup_records[qtype]['all'] = trimmed_records
+            subgroup_records[qtype]['interrupting'] = interrupting
+            subgroup_records[qtype]['non-interrupting'] = noninterrupting
+            subgroup_records[qtype]['diseased'] = diseased
+            subgroup_records[qtype]['non-diseased'] = nondiseased
+            subgroup_records[qtype]['positive'] = positive
+            subgroup_records[qtype]['negative'] = negative
     
         return subgroup_records
 
@@ -1349,11 +1427,11 @@ class simulator (object):
                                               columns=columns+[qtype, qtype+'_trigger', qtype+'_open', qtype+'_close'])
             df = pandas.merge (df, adf.drop (axis=1, columns=columns),
                                right_index=True, left_index=True, how='inner')
-            
+        
         ## Store the data frame as a private variable
         self._waiting_time_dataframe = df
 
-    def _collect_n_patients (self): # Not updated for hierarchical queueing!!!
+    def _collect_n_patients (self): # Updated for hierarchical queueing
     
         ''' Put the number of patients per subgroup right before a new patient
             arrives into two dataframes: one counts the number of patients in

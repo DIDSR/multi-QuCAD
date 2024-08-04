@@ -45,6 +45,10 @@ colors['simulation'] = 'darkgray'
 ################################
 convert_time = lambda time, time0: (time - time0).total_seconds() / hour_to_second
 
+get_n_positive_patients = lambda oneSim, qtype:len (oneSim.get_positive_records(qtype))
+get_n_negative_patients = lambda oneSim, qtype:len (oneSim.get_negative_records(qtype))
+get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_records(qtype))
+
 ################################
 ## Define plotting functions
 ################################
@@ -178,6 +182,48 @@ def get_stats (values, weights=None):
     stat['upper_95cl']   = sample[cumulative>0.975][0] # upper is 50%+47.5% = 97.5%
     
     return stat
+
+def plot_sim_theory_diseased (outFile, qtype, diseases, df):
+
+    filtered_df = df[df.index.str.contains(qtype)]
+
+    h  = plt.figure (figsize=(25, 12))
+
+    #  Simulation
+    xticks = list(range(len(diseases)))
+    xticklabels = diseases
+
+    cmap = plt.cm.get_cmap('viridis', len(diseases))  # 'viridis' can be replaced with other colormaps
+
+    i = 0
+    for disease in diseases:
+        sim_lower = filtered_df['sim_waittime_low'][f'{qtype} {disease}']
+        sim_upper = filtered_df['sim_waittime_high'][f'{qtype} {disease}']
+        sim_mean = filtered_df['sim_waittime'][f'{qtype} {disease}']
+
+        plt.errorbar (xticks[i], sim_mean, marker="x", markersize=10, color=cmap(i),
+                    yerr=[[sim_mean-sim_lower], [sim_upper-sim_mean]], elinewidth=3, alpha=0.8, ecolor=cmap(i), linestyle='', label = f'Simulation {disease}')
+        i += 1
+        
+    ## Theory
+    i = 0
+    theory_array = []
+    for disease in diseases:
+        theory_array = filtered_df['theory_waittime'][f'{qtype} {disease}']
+        plt.scatter(xticks[i], theory_array, marker="o", color=cmap(i), label = f'Theory {disease}')
+        i += 1
+
+    # Format x-axis
+    plt.xlabel ('Wait-time', fontsize=9)
+    plt.xticks (xticks, xticklabels)
+
+    # Format y-axis
+    plt.ylim (0, max(filtered_df['sim_waittime_high'].max(), filtered_df['theory_waittime'].max()) * 1.05)
+
+    plt.title('Sim vs Theory for each Diseased Group')
+    plt.legend()
+    h.savefig (outFile)
+
 
 def plot_n_patient_distribution (axis, npatients, aclass, params, qtype, doLogY=True):
     

@@ -439,7 +439,6 @@ class trialGenerator (object):
 
         return 
 
-
     def _get_n_patients_stats (self, df):
 
         ''' Obtain statistics from number of patients as observed by each
@@ -674,7 +673,7 @@ class trialGenerator (object):
 
         ## Generate trials
         for i in range (self._nTrials):
-            
+            print(i)
             if i%10 == 0 :
                 self._logger.debug (' -- {0} / {1} simulations'.format (i, self._nTrials))
 

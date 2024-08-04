@@ -27,11 +27,12 @@
 ################################
 ## Import packages
 ################################ 
-import pickle, time, os, sys, cProfile, io, pstats, argparse, pandas
+import pickle, time, os, sys, cProfile, io, pstats, argparse, pandas, numpy
 from datetime import datetime
+import scipy.stats as stats
 
 sys.path.insert(0, os.getcwd()+'\\tools')
-from tools import inputHandler, trialGenerator, plotter
+from tools import inputHandler, trialGenerator, plotter, simulator
 
 ################################
 ## Function
@@ -58,19 +59,20 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups, aDiseaseTree):
 
     diseases = [gp['diseaseNames'][i] for _, gp in diseaseGroups.items()
                 for i in range (len (gp['diseaseNames']))]
-
+    
     sim_wdf = trial_wdf[trial_wdf['trial_id']=='trial_000']
     wdf = sim_wdf[sim_wdf['is_interrupting']==False]
 
-    adict = {'n_sim_pateints':[], 'sim_waittime':[], 'theory_waittime':[]}
-    #rows = ['fifo_non-interrupting'] + \
-    rows = ['priority '+ disease for disease in diseases] + \
+    adict = {'n_sim_pateints':[], 'sim_waittime':[], 'sim_waittime_low': [], 'sim_waittime_high': [], 'theory_waittime':[]}
+    rows =  ['fifo_non-interrupting'] + \
+            ['priority '+ disease for disease in diseases] + \
             ['hierarchical '+ disease for disease in diseases]
 
     for row in rows:
         if 'fifo' in row:
             nvalue = len (wdf.fifo)
             simvalue = wdf.fifo.mean()
+            simvalue_low, simvalue_high = stats.t.interval(0.95, len(wdf.fifo)-1, loc=simvalue, scale=stats.sem(wdf.fifo))
             theoryvalue = theory['fifo']['non-interrupting']
         else:
             qtype, disease = row.split()
@@ -78,39 +80,23 @@ def sim_theory_summary (trial_wdf, theory, diseaseGroups, aDiseaseTree):
 
             ## If want sim and theory values for true diseased groups:
             simvalue = wdf[wdf['disease_name']==disease][qtype].mean()
-            theoryvalue = theory[qtype][disease] if qtype == 'priority' else \
-                          theory[qtype][disease]['diseased']
+            simvalue_low, simvalue_high = stats.t.interval(0.95, len(wdf[wdf['disease_name']==disease][qtype])-1, loc=simvalue, scale=stats.sem(wdf[wdf['disease_name']==disease][qtype]))
+            theoryvalue = theory[qtype][disease]['diseased']
             
-            ## If want sim and theory values for AI-positive groups rather than true diseased,
-            ## uncomment below.
-            
-            # for aGroup in aDiseaseTree.diseaseGroups:
-            #     vendors_in_group = []
-            #     for anAI in aGroup.AIs:
-            #         vendors_in_group.append(anAI.AIname)
-            #         if disease==anAI.targetDisease:
-            #             vendorname = anAI.AIname
-            #             condition = wdf[vendorname] == True
-            #             # Create conditions for all other vendors being False
-            #             for vendor in vendors_in_group:
-            #                 if vendor != vendorname:
-            #                     condition &= wdf[vendor] == False
-            # simvalue = wdf[condition][qtype].mean()
-            # theoryvalue =  theory[qtype][disease] if qtype == 'priority' else \
-            #                theory[qtype][disease]['positive']
-
         adict['n_sim_pateints'].append (nvalue)            
-        adict['sim_waittime'].append (simvalue)
+        adict['sim_waittime'].append (simvalue)        
+        adict['sim_waittime_low'].append (simvalue_low)
+        adict['sim_waittime_high'].append (simvalue_high)
         adict['theory_waittime'].append (theoryvalue)
 
     ## Add in sim_delta and theory_delta 
-    adict['sim_delta'] = adict['sim_waittime'] - adict['sim_waittime'][0]
-    adict['theory_delta'] = adict['theory_waittime'] - adict['theory_waittime'][0]
+    #adict['sim_delta'] = adict['sim_waittime'] - adict['sim_waittime'][0]
+    #adict['theory_delta'] = adict['theory_waittime'] - adict['theory_waittime'][0]
     adict['columns'] = rows
 
     return pandas.DataFrame (adict).set_index ('columns')
 
-def generate_plots (params, trialGen):
+def generate_plots (params, trialGen, results):
 
     ''' Function to generate plots.
 
@@ -123,6 +109,39 @@ def generate_plots (params, trialGen):
     if params['isPreemptive']:
         outFile = params['plotPath'] + 'nPatientsDistributions.png'
         plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df, trialGen.n_patients_system_stats, params)
+
+    # For plotting patient timings in queue
+    get_n_positive_patients = lambda oneSim, qtype:len (oneSim.get_positive_records(qtype))
+    get_n_negative_patients = lambda oneSim, qtype:len (oneSim.get_negative_records(qtype))
+    get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_records(qtype))
+    get_n_hier_class_patients = lambda oneSim, qtype, key:len (oneSim.get_hier_class_records(qtype, key))
+
+    ## Check AI performance with one trial
+    oneSim = simulator.simulator ()
+    oneSim.set_params (params)
+    oneSim.track_log = False ## Make sure it is False for optimal runtime
+    oneSim.simulate_queue (AIs, aDiseaseTree)
+    params['n_patients_per_class'] = {qtype:{aclass:get_n_interrupting_patients (oneSim, qtype) if aclass=='interrupting' else \
+                                                    get_n_positive_patients  (oneSim, qtype) if aclass=='positive' else \
+                                                    get_n_negative_patients  (oneSim, qtype) if aclass=='negative' else \
+                                                    get_n_hier_class_patients (oneSim, qtype, aclass)
+                                                for aclass in ['interrupting', 'positive', 'negative'] + list(params['hierDict'].keys())}
+                                        for qtype in params['qtypes'][1:]}
+    
+    ## If do-plots, generate plots for one simulation
+    if params['doPlots']:
+        # Timing flow with first 200 cases for both with and withoutCADt
+        diseases = [gp['diseaseNames'][i] for _, gp in params['diseaseGroups'].items()
+                for i in range (len (gp['diseaseNames']))]
+
+        for qtype in params['qtypes']:
+            outFile = params['plotPath'] + 'patient_timings_' + qtype + '.pdf'
+            #Plot patient timings
+            plotter.plot_timing (outFile, oneSim.all_records, params['startTime'], n=200, qtype=qtype)
+        for qtype in ['priority', 'hierarchical']:
+            outFile = params['plotPath'] + 'sim_theory_' + qtype + '.pdf'
+            #Plot wait-time simulation and theory for each true-diseased group
+            plotter.plot_sim_theory_diseased (outFile, qtype, diseases, results)
 
 ################################
 ## Script starts here!
@@ -157,8 +176,9 @@ if __name__ == '__main__':
     #trialGen._get_sim_probabilities(trialGen.waiting_times_df, aDiseaseTree, params)
     results = sim_theory_summary (trialGen.waiting_times_df, params['theory'], params['diseaseGroups'], aDiseaseTree)
     print (results)
-    if params['doPlots']: generate_plots (params, trialGen)
 
+    if params['doPlots']: generate_plots (params, trialGen, results)
+            
     ## Gather data for dict
     data = {'params':params,
             'lpatients':trialGen.n_patients_system_df,
@@ -168,6 +188,7 @@ if __name__ == '__main__':
     with open (params['statsFile'], 'wb') as f:
         pickle.dump (data, f)
     f.close()
+
     
     if params['doRunTime']:
         pr.disable()
