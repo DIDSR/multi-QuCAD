@@ -189,7 +189,7 @@ def check_user_inputs (params):
         if params['nRadiologists'] > 1:
             print('WARN: Non-preemptive queueing with more than one radiologist. Theoretical results not available for priority or hierarchical scenario.')
         if params['fractionED'] > 0:
-            print('WARN: Non-preemptive queueing with presence of interrupting patients. Theoretical results not available.')
+             print('WARN: Non-preemptive queueing with presence of interrupting patients. Theoretical results not available for priority or hierarchical scenario.')
 
 def read_args (configFile):
 
@@ -234,7 +234,6 @@ def read_args (configFile):
 
     check_user_inputs (params)
     return add_params (params) 
-
 
 def extract_clinical_simulation_settings (content):
 
@@ -488,7 +487,6 @@ def get_ppvs_npvs (aDiseaseTree):
             probs['npv'][groupName][AIName] = get_npv (prevalence, Se, Sp)
             
     return probs
-
 
 def get_prob (aDiseaseTree):
 
@@ -1131,8 +1129,7 @@ def get_prob_AI_neg_group(aDiseaseTree, prob_pos_i_neg_higher_AIs):
         for disease in prob_pos_i_neg_higher_AIs[groupName]:
             sum_prob_pos_i_neg_higher_AIs += prob_pos_i_neg_higher_AIs[groupName][disease]
             
-    p_i = 1-sum_prob_pos_i_neg_higher_AIs
-    prob_AI_neg_group = p_i  
+    prob_AI_neg_group = 1-sum_prob_pos_i_neg_higher_AIs
 
     return prob_AI_neg_group
     
@@ -1193,6 +1190,23 @@ def get_readtime_2ndmoment_groups (params, aHierarchy):
             arrival_rates.append(arrival_rate)
 
     return pos_means, pos_2nd_moment, arrival_rates
+
+def get_group_disease_order (params, aHierarchy):
+    ''' 
+    Used to get effective readtime and second moment for each AI+ group.
+    Used in calculator.get_all_waittime_hierarchical_nonpreemptive for hierarchical nonpreemptive theory.
+    '''
+    ### Loop through all groups, get info for each AI-positive subgroup
+    arr = aHierarchy.groupNames
+    _, idx = numpy.unique(arr, return_index=True)
+    unique_groupNames_array = arr[numpy.sort(idx)]
+    probs = {}
+    for i in range(len(unique_groupNames_array)):
+        groupname = unique_groupNames_array[i]
+        probs[groupname] = {}
+        for diseasename in params['diseaseGroups'][groupname]['diseaseNames'][::-1]: #Fix AI a_i. If none corresponding to disease, Sp = 1, Se = 0 in all that follows.
+            probs[groupname][diseasename] = 0
+    return probs
 
 def get_readtime_2ndmoment_posneg(params, aHierarchy):
 
@@ -1479,6 +1493,8 @@ def add_params (params, include_theory=True):
     
     aDiseaseTree = create_disease_tree (params['diseaseGroups'],
                                         params['meanServiceTimes'], AIs)
+    params['rankedDiseases'] = aDiseaseTree.diseaseRanked
+    params['rankedGroups'] = aDiseaseTree.groupRanked    
 
     aHierarchy = create_hierarchy (params['diseaseGroups'], params['AIinfo'])
     params['hierDict'] = aHierarchy.hierDict
@@ -1536,7 +1552,12 @@ def add_params (params, include_theory=True):
     ## Simulation times
     nPatientsPerTrial = params['nPatientsTarget'] + sum (params['nPatientsPads'])
     params['timeWindowDays'] = get_timeWindowDay (params['lambda_effective'], nPatientsPerTrial)
+    #  Cap the number of days to avoid overflow error. This will lead to not having the target patient size
+    if params['timeWindowDays'] > 80000:
+        print ('WARN: Traffic is too low that it takes a loooong time to gather the target number of patients. Capping to 80000')
+        params['timeWindowDays'] = 80000
     params['endTime'] = params['startTime'] + pandas.offsets.Day (params['timeWindowDays'])
+    
     
     ## Setting per priority class    
     params['lambdas'] = params['arrivalRates']

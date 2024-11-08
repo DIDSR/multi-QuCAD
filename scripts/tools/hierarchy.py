@@ -1,4 +1,3 @@
-
 ##
 ## By Elim Thompson (05/21/2024)
 ##
@@ -97,8 +96,8 @@ class hierarchy (object):
         self._AINames = AINames[order]
 
         ## Build a hierarchy class dictionary
-        self._hierDict = {ainame : order + start_priority
-                          for ainame, order in zip (self._AINames, order)}
+        self._hierDict = {ainame : o + start_priority
+                          for ainame, o in zip (self._AINames, order[order])}
         
     def _calculate_equivalent_Se_Sp (self, se_array, sp_array, all_pop_d_prevalence, all_groupProbs):
         
@@ -279,7 +278,9 @@ class hierarchy (object):
     def _update_newParams (self, newParams, keep_ai): 
         
         ''' Private function to compute and return params after creating equivalent
-            AIs from multiple AIs.
+            AIs from multiple AIs. Equivalent Se, Sp and disease group probabilities
+            are computed. Other parameters may be updated just for consistency in
+            access to params[variables].
 
             inputs
             ------
@@ -291,20 +292,25 @@ class hierarchy (object):
             ------
             newParams (dict): params dict that is updated            
         '''
+
         if keep_ai is not 'all':
             disease = keep_ai[-1]
         else:
             disease = None
 
-            ## Loop through all groups, get info for each AI-positive subgroup
+        ## Loop through all groups, get info for each AI-positive subgroup
         arr = list(newParams['meanServiceTimes'].keys())
         arr = arr[:-1]   
 
-        #possible issue with newParams['mus']['positive'] and newParams['mus']['negative']???
+        new_lambdas = {'interrupting': newParams['lambdas']['interrupting'],
+                       'non-interrupting': newParams['lambdas']['non-interrupting'],
+                       'positive': newParams['lambdas']['positive'],
+                       'negative': newParams['lambdas']['negative']}
+        new_rhos = {'interrupting': newParams['rhos']['interrupting'],
+                    'non-interrupting': newParams['rhos']['non-interrupting'],
+                    'positive': newParams['rhos']['positive'],
+                    'negative': newParams['rhos']['negative']}
 
-        new_lambdas = {'interrupting': newParams['lambdas']['interrupting'], 'non-interrupting': newParams['lambdas']['non-interrupting']}
-        new_rhos = {'interrupting': newParams['rhos']['interrupting'], 'non-interrupting': newParams['rhos']['non-interrupting']}
-        
         for groupname in newParams['diseaseGroups']:
             for diseasename in newParams['diseaseGroups'][groupname]['diseaseNames']:
                 if diseasename == disease:
@@ -408,6 +414,7 @@ class hierarchy (object):
             hi_AIs (array): AIs in the "high" priority class
             lo_AIs (array): AIs in the "low" priority class
         '''
+
         idx = list(self.diseaseNames).index(diseaseDivide)
         hi_AIs = self.diseaseNames[:idx]
         lo_AIs = self.diseaseNames[:idx+1]
@@ -438,25 +445,30 @@ class hierarchy (object):
             positive_rate (float): sum of TP and FP.
         '''
         
-        if diseaseOnly == False:
-            pos_rate = 0
+        if diseaseOnly:
+            for groupname in params['rankedGroups']:
+                diseasenames = numpy.array (params['diseaseGroups'][groupname]['diseaseNames'])
+                diseaseorders = numpy.argsort (params['diseaseGroups'][groupname]['diseaseRanks']) 
+                for diseasename in diseasenames[diseaseorders]:
+                    if diseasename == disease:
+                        pos_rate = params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
+
+            return pos_rate
+
+        else:
             found = False
-            for groupname in params['diseaseGroups']:
-                if found: 
-                    break
-                for diseasename in params['diseaseGroups'][groupname]['diseaseNames']:
+            pos_rate = 0
+            for groupname in params['rankedGroups']:
+                if found: break
+                diseasenames = numpy.array (params['diseaseGroups'][groupname]['diseaseNames'])
+                diseaseorders = numpy.argsort (params['diseaseGroups'][groupname]['diseaseRanks'])
+                for diseasename in diseasenames[diseaseorders]:
                     if diseasename == disease:
                         pos_rate += params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
                         found = True
                         break
                     else:
                         pos_rate += params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
-
-        else:
-            for groupname in params['diseaseGroups']:
-                for diseasename in params['diseaseGroups'][groupname]['diseaseNames']:
-                    if diseasename == disease:
-                        pos_rate = params['prob_pos_i_neg_higher_AIs'][groupname][diseasename]
 
         return pos_rate
 
@@ -482,11 +494,13 @@ class hierarchy (object):
         # To match the expected format in get_theory_waitTime
         updatedParams['SeThresh'] = list(updatedParams['SeThreshs'].values())[0] 
         updatedParams['SpThresh'] = list(updatedParams['SpThreshs'].values())[0]
+
         meanWaitTime = calculator.get_theory_waitTime_fifo_preresume (pclass, 'preresume', updatedParams)
         ## Another function if non-preemptive
         return updatedParams, meanWaitTime
     
     def predict_mean_waitTime_dis (self, params, aHierarchy, hier_flag):
+        
         ''' Function to convert waiting time for all AI+ classes and AI- class in preresume priority and hierarchical scheme
             to wait-time for true-diseased patients. 
 
@@ -580,7 +594,8 @@ class hierarchy (object):
         theories = {}
 
         ## Now, loop through each disease condition to get the theorectical predictions
-        for disease in self.diseaseNames:
+        #for disease in self.diseaseNames:
+        for disease in params['rankedDiseases']:
 
             theories[disease] = {}
 
@@ -600,7 +615,7 @@ class hierarchy (object):
                 ## Get the rate of positive patients in each case: hi, lo, and chosen disease.
                 loPosRate = self._get_positive_rate (params_lo, disease, diseaseOnly=False)
                 hiPosRate = self._get_positive_rate (params_hi, prev_disease, diseaseOnly=False)                 
-                posRate = self._get_positive_rate (params, disease, diseaseOnly=True) #, diseasename=disease, AIname=AIname, groupname=group)
+                posRate = self._get_positive_rate (params, disease, diseaseOnly=True) 
                 
                 theory_pos = (theory_lo*loPosRate - theory_hi*hiPosRate) / posRate
 

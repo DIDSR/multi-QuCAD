@@ -216,7 +216,15 @@ class diseaseTree (object):
     def diseaseGroups (self): return self._diseaseGroups
 
     @property
-    def diseaseRanked (self): return self._diseaseRanked
+    def ranked (self): return dict(sorted(self._ranksByDiseases.items(), key=lambda item: item[1]['rank']))   
+
+    @property
+    def diseaseRanked (self): return numpy.array (list (self.ranked.keys()))
+
+    @property
+    def groupRanked (self):
+        groups = numpy.array ([values['group'] for _, values in self.ranked.items()]) 
+        return groups[numpy.sort(numpy.unique(groups, return_index=True, axis=0)[1])] 
 
     def get_groupNames (self):
 
@@ -313,6 +321,7 @@ class diseaseTree (object):
                                     AIs=AIsInGroup)
 
         self.check_groupProbs()
+        self.get_rank_by_diseases ()
     
     def get_diseased_prevalence (self):
 
@@ -340,3 +349,14 @@ class diseaseTree (object):
         '''
 
         return 1 - self.get_diseased_prevalence()
+
+    def get_rank_by_diseases (self):
+
+        ranksByDiseases = {} 
+
+        for agroup in self.diseaseGroups: 
+            for adisease in agroup.diseases: 
+                if adisease.diseaseName == 'non-diseased': continue 
+                ranksByDiseases[adisease.diseaseName] = {'rank':adisease.diseaseRank, 'group':agroup.groupName} 
+
+        self._ranksByDiseases = ranksByDiseases                                                                                               

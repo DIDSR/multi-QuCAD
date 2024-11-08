@@ -639,7 +639,6 @@ class simulator (object):
         
             return copied, dict_hier
         
-
     def _count_nPatients (self, qtype, newArrivalTime):
         
         ''' Count the number of patients currently in the system. This
