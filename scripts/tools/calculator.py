@@ -84,7 +84,12 @@ def get_theory_waitTime (params, aHierarchy):
 
     ## For priority, there are interrupting, positive, and negative
     if params['isPreemptive']: # Preemptive priority: no additional assumptions
-        theories['priority'] = aHierarchy.predict_mean_waitTime_dis (params, aHierarchy, False)
+        try:
+            theories['priority'] = aHierarchy.predict_mean_waitTime_dis (params, aHierarchy, False)
+        except:
+            theories['priority'] = {}
+            for diseaseName in aHierarchy.diseaseNames:
+                theories['priority'][diseaseName] = {'diseased': numpy.nan}        
     elif params['isPreemptive'] == False and params['nRadiologists'] == 1: # Nonpreemptive priority: only single server assumed
         theories['priority'] = get_all_waitTime_priority_nonpreemptive (params, aHierarchy)
     else: # Nonpreemptive w more than one radiologist: no theory for priority
