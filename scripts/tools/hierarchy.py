@@ -96,8 +96,10 @@ class hierarchy (object):
         self._AINames = AINames[order]
 
         ## Build a hierarchy class dictionary
+        #self._hierDict = {ainame : o + start_priority
+        #                  for ainame, o in zip (self._AINames, order[order])}
         self._hierDict = {ainame : o + start_priority
-                          for ainame, o in zip (self._AINames, order[order])}
+                          for o, ainame in enumerate (self._AINames)}
         
     def _calculate_equivalent_Se_Sp (self, se_array, sp_array, all_pop_d_prevalence, all_groupProbs):
         
