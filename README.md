@@ -19,12 +19,12 @@ This software package was developed using Python 3.9.4 with the following extra 
 `scripts/run_sim.py` is the main script to run this software. There are two ways to accept user input values that specify clinical settings, CADt AI diagnostic performance, and software preferences. By default, outputs will be dumped in outputs/ automatically including plots and a pickled python dictionary that contains all simulation information. Please refer to  the `UserManual.pdf` and `scripts/README.md` for more information
 
 # Relevant Publications
-* [Yee Lam Elim Thompson, Gary M. Levine, Weijie Chen, Berkman Sahiner, Qin Li, Nicholas Petrick, Jana G. Delfino, Miguel A. Lago, Qian Cao, and Frank W. Samuelson. "Evaluation of wait time saving effectiveness of triage algorithms." arXiv preprint arXiv:2303.07050 (2023).](https://arxiv.org/abs/2303.07050)
-* [Yee Lam Elim Thompson, Gary Levine, Weijie Chen, Berkman Sahiner, Qin Li, Nicholas Petrick, Frank Samuelson, "Wait-time-saving analysis and clinical effectiveness of computer-aided triage and notification (CADt) devices based on queueing theory," Proc. SPIE 12035, Medical Imaging 2022: Image Perception, Observer Performance, and Technology Assessment, 120350Q (4 April 2022); https://doi.org/10.1117/12.2603184](https://www.spiedigitallibrary.org/conference-proceedings-of-spie/12035/0000/Wait-time-saving-analysis-and-clinical-effectiveness-of-Computer-Aided/10.1117/12.2603184.full?SSO=1)
+* [Thompson, Yee Lam Elim, et al. ‘Applying Queueing Theory to Evaluate Wait-Time-Savings of Triage Algorithms’. Queueing Systems, vol. 108, no. 3–4, Springer Science and Business Media LLC, Sept. 2024, pp. 579–610, https://doi.org/10.1007/s11134-024-09927-w.](https://link.springer.com/article/10.1007/s11134-024-09927-w)
+* [Thompson, Yee Lam Elim, et al. ‘Wait-Time-Saving Analysis and Clinical Effectiveness of Computer-Aided Triage and Notification (CADt) Devices Based on Queueing Theory’. Medical Imaging 2022: Image Perception, Observer Performance, and Technology Assessment, edited by Claudia R. Mello-Thoms and Sian Taylor-Phillips, SPIE, 2022, https://doi.org/10.1117/12.2603184.](https://www.spiedigitallibrary.org/conference-proceedings-of-spie/12035/0000/Wait-time-saving-analysis-and-clinical-effectiveness-of-Computer-Aided/10.1117/12.2603184.short)
 * [FDA Science Forum (2021)](https://www.fda.gov/media/148986/download)
 
 # Citation for this tool
-Yee Lam Elim Thompson, Jixin Audrey Zheng, Frank W. Samuelson. (2023) QuCAD [Source Code] https://github.com/DIDSR/QuCAD/.
+Yee Lam Elim Thompson, Michelle Mastrinanni, Rucha Deshpande, Jixin Audrey Zheng, Frank W. Samuelson. (2023) QuCAD [Source Code] https://github.com/DIDSR/QuCAD/.
 
 # Contact
 For any questions/suggestions/collaborations, please contact Elim Thompson either via this GitHub repo or via email (yeelamelim.thompson@fda.hhs.gov).
