@@ -55,23 +55,48 @@ get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_
 ## +------------------------------------------
 ## | For timing of cases
 ## +------------------------------------------
-def plot_timing (outFile, records, time0, n=200, qtype='fifo'):
+def get_pclass (record, qtype, hierDict, AIinfo):
+
+    ## Interrupting patients
+    if record.is_interrupting: return 'I'
+
+    ## If fifo, no AI positive/negative classes
+    if qtype == 'fifo': return 'nonI'
+
+    ## If priority qtype, all AI-positive are considered as positive
+    if qtype == 'priority':
+        if record.is_positive and record.is_diseased: return 'TP'
+        if record.is_positive and not record.is_diseased: return 'FP'
+        if not record.is_positive and record.is_diseased: return 'FN'
+        if not record.is_positive and not record.is_diseased: return 'TN'
+
+    ## If hierarchical, the condition and AI matters
+    for rank, (ainame, _) in enumerate (dict(sorted(hierDict.items(), key=lambda item: item[1])).items()):
+        if ainame is None: continue
+        diseasename = AIinfo[ainame]['targetDisease']
+
+        if record[ainame] and record.disease_name==diseasename: return 'TP-{0}'.format (rank+1)
+        if record[ainame] and record.disease_name!=diseasename: return 'FP-{0}'.format (rank+1)
+
+    if record.is_diseased: return 'FN'
+    return 'TN'
+
+def plot_timing (outFile, records, time0, hierDict, AIinfo, n=200, qtype='fifo'):
     
     ''' Function to plot image timestamp workflows for the first N cases.
 
         inputs
         ------
         outFile (str): filename of the output plot including path
-        records (dict): key = 'fifo' or 'priority' for without and with CADt scenarios
-                        Each value is a list of patient instances.
+        records (df): dataframe of all simulated patients
         time0 (pandas Timestamp): simulation start time
         n (int): number of cases from the beginning of simulation to be included 
         qtype (str): either 'fifo' or 'priority' to be plotted
     '''
 
     ## Extract the first N number of cases (default 200)
-    records = sorted (records[qtype][:n])
-    
+    records = records[:n]
+        
     ## Set up canvas
     h  = plt.figure (figsize=(15, 15))
     gs = gridspec.GridSpec (1, 1)
@@ -82,26 +107,18 @@ def plot_timing (outFile, records, time0, n=200, qtype='fifo'):
     ## and the doctor that is reading the case
     xvalues, yvalues, trigger, close = [], [], [], []
     caseIDs = {'text':[], 'yvalue':[], 'xvalue':[]}
-    doctors = {'text':[], 'yvalue':[], 'xvalue':[]} 
-    for index, record in enumerate (records):
-        pclass = 'E' if record.is_interrupting else \
-                 'TP' if record.is_positive and record.is_diseased else \
-                 'FP' if record.is_positive and not record.is_diseased else \
-                 'FN' if not record.is_positive and record.is_diseased else \
-                 'TN'
-        caseIDs['text'].append ('#{0} ({1})'.format (record.caseID[-3:], pclass))
+    for index, record in records.iterrows():
+        pclass = get_pclass (record, qtype, hierDict, AIinfo)
+        caseIDs['text'].append ('#{0} ({1})'.format (index, pclass))
         caseIDs['yvalue'].append (len (records) - index)
-        caseIDs['xvalue'].append (convert_time (record.trigger_time, time0))
-        for n in range (len (record.open_times)):
-            openTime, closeTime = record.open_times[n], record.close_times[n]
+        caseIDs['xvalue'].append (convert_time (record[qtype + '_trigger'], time0))
+        for n in range (len (record[qtype + '_open'])):
+            openTime, closeTime = record[qtype + '_open'][n], record[qtype + '_close'][n]
             xvalues.append (convert_time (openTime, time0))
             yvalues.append (index)
-            begin = record.trigger_time if n==0 else record.close_times[n-1]
+            begin = record[qtype + '_trigger'] if n==0 else record[qtype + '_close'][n-1]
             trigger.append (convert_time (begin, time0))
-            close.append (convert_time (closeTime, time0))
-            doctors['text'].append (' {0}'.format (record.doctors[n].split('_')[-1]))
-            doctors['yvalue'].append (len (records) - index)
-            doctors['xvalue'].append (convert_time (closeTime, time0))            
+            close.append (convert_time (closeTime, time0))     
     # Time bar from patient image arrival to radiologist start reading
     xlower = [x-t for t, x in zip (trigger, xvalues)]
     axis.errorbar (xvalues, len (records) - numpy.array (yvalues), marker=None, color='blue',
@@ -114,9 +131,6 @@ def plot_timing (outFile, records, time0, n=200, qtype='fifo'):
     axis.errorbar (xvalues, len (records) - numpy.array (yvalues), marker=None, color='red',
                    xerr=[numpy.zeros(len (xvalues)), xupper], label='serving',
                    elinewidth=2, alpha=0.5, ecolor='red', linestyle='')
-    # Print the doctor index (0, 1, 2, etc.). If only 1 radiologist, always "doctor 0".
-    for x, y, t in zip (doctors['xvalue'], doctors['yvalue'], doctors['text']):
-        axis.text (x, y, t, horizontalalignment='right', verticalalignment='center', color='black', fontsize=2)    
 
     ## Format plotting style
     #  x-axis
@@ -183,47 +197,115 @@ def get_stats (values, weights=None):
     
     return stat
 
-def plot_sim_theory_diseased (outFile, qtype, diseases, df):
+def plot_sim_theory_diseased (outFile, diseases, results):
 
-    filtered_df = df[df.index.str.contains(qtype)]
+    ## Set up canvas
+    h  = plt.figure (figsize=(7.5, 7.5))
+    gs = gridspec.GridSpec (2, 1, height_ratios=[4, 1])
+    #gs.update (bottom=0.1)
 
-    h  = plt.figure (figsize=(25, 12))
+    ## Top plot: priority and hierarchical wait-time per condition
+    axis = h.add_subplot (gs[0])
 
-    #  Simulation
-    xticks = list(range(len(diseases)))
-    xticklabels = diseases
+    yrange = [numpy.inf, -numpy.inf]
+    for qtype in ['fifo', 'priority', 'hierarchical']:
+        filtered_df = results[results.index.str.contains(qtype)]
+        ## For fifo (without-CADt), only one data point
+        if qtype == 'fifo':
+            ylower = filtered_df.loc['fifo_non-interrupting', 'sim_waittime_low']
+            yupper = filtered_df.loc['fifo_non-interrupting', 'sim_waittime_high']
+            yvalue = filtered_df.loc['fifo_non-interrupting', 'sim_waittime']
+            yerror = [[yvalue - ylower], [yupper - yvalue]]
+            axis.errorbar (1, filtered_df.loc['fifo_non-interrupting', 'sim_waittime'],
+                           marker='x', ms=10, color='blue',
+                           yerr=yerror, label='w/o CADt',
+                           elinewidth=2, alpha=0.7, ecolor='blue', linestyle='')      
+            axis.scatter (1, filtered_df.loc['fifo_non-interrupting', 'theory_waittime'],
+                          marker='*', s=100, facecolors='none', edgecolors='blue', alpha=0.7) 
+            if ylower < yrange[0]: yrange[0] = ylower
+            if yupper > yrange[1]: yrange[1] = yupper
+            continue
+        ## For priority/hierarchical, it is per-condition
+        xvalues, svalues, slowers, suppers, tvalues = [], [], [], [], []
+        color = 'red' if qtype=='priority' else 'green'
+        offset = -0.15 if qtype == 'priority' else +0.15
+        for dindex, disease in enumerate (diseases):
+            xvalues.append (dindex+2+offset)
+            indexname = qtype + ' ' + disease
+            svalues.append (filtered_df.loc[indexname, 'sim_waittime'])
+            slowers.append (filtered_df.loc[indexname, 'sim_waittime_low'])
+            suppers.append (filtered_df.loc[indexname, 'sim_waittime_high'])
+            tvalues.append (filtered_df.loc[indexname, 'theory_waittime'])
+        svalues = numpy.array (svalues)
+        slowers = numpy.array (slowers)
+        suppers = numpy.array (suppers)
+        yerror = [svalues - slowers, suppers - svalues]
+        axis.errorbar (xvalues, svalues, marker='x', ms=10, color=color,
+                       yerr=yerror, label=qtype + '; sim',
+                       elinewidth=2, alpha=0.5, ecolor=color, linestyle='')      
+        axis.scatter (xvalues, tvalues, marker='*', s=100, facecolors='none',
+                      edgecolors=color, alpha=0.7, label=qtype + '; theory') 
+        if min (slowers) < yrange[0]: yrange[0] = min (slowers)
+        if max (suppers) > yrange[1]: yrange[1] = max (suppers)        
 
-    cmap = plt.cm.get_cmap('viridis', len(diseases))  # 'viridis' can be replaced with other colormaps
+    ## Format plotting style
+    #  x-axis
+    axis.set_xlim (0, len (diseases)+2)
+    xticks = numpy.arange (len (diseases)+2)
+    axis.set_xticks (xticks)
+    axis.set_xticklabels([])
+    for xtick in axis.get_xticks():
+        axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    #  y-axis
+    yrange[1] += 50
+    axis.set_ylim (yrange)
+    axis.set_ylabel ('Mean wait-time [min]')
+    for ytick in axis.get_yticks():
+        axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    #  legend and title
+    axis.legend (loc=1, ncol=2, prop={'size':12})
+    axis.set_title ('Simulation & theory', fontsize=15)
 
-    i = 0
-    for disease in diseases:
-        sim_lower = filtered_df['sim_waittime_low'][f'{qtype} {disease}']
-        sim_upper = filtered_df['sim_waittime_high'][f'{qtype} {disease}']
-        sim_mean = filtered_df['sim_waittime'][f'{qtype} {disease}']
+    ## Bottom plot: time-savings
+    axis = h.add_subplot (gs[1])
 
-        plt.errorbar (xticks[i], sim_mean, marker="x", markersize=10, color=cmap(i),
-                    yerr=[[sim_mean-sim_lower], [sim_upper-sim_mean]], elinewidth=3, alpha=0.8, ecolor=cmap(i), linestyle='', label = f'Simulation {disease}')
-        i += 1
-        
-    ## Theory
-    i = 0
-    theory_array = []
-    for disease in diseases:
-        theory_array = filtered_df['theory_waittime'][f'{qtype} {disease}']
-        plt.scatter(xticks[i], theory_array, marker="o", color=cmap(i), label = f'Theory {disease}')
-        i += 1
+    for qtype in ['priority', 'hierarchical']:
+        filtered_df = results[results.index.str.contains(qtype)]
+        noAI_svalue = results.loc['fifo_non-interrupting', 'sim_waittime']
+        noAI_tvalue = results.loc['fifo_non-interrupting', 'theory_waittime']
+        ## For priority/hierarchical, it is per-condition
+        xvalues, svalues, tvalues = [], [], []
+        color = 'red' if qtype=='priority' else 'green'
+        offset = -0.15 if qtype == 'priority' else +0.15
+        for dindex, disease in enumerate (diseases):
+            xvalues.append (dindex+2+offset)
+            indexname = qtype + ' ' + disease
+            svalues.append (filtered_df.loc[indexname, 'sim_waittime'] - noAI_svalue)
+            tvalues.append (filtered_df.loc[indexname, 'theory_waittime'] - noAI_tvalue)
+        axis.scatter (xvalues, svalues, marker='x', c=color, s=100, alpha=0.7, label='sim')    
+        axis.scatter (xvalues, tvalues, marker='*', s=100, facecolors='none',
+                      edgecolors=color, alpha=0.7) 
 
-    # Format x-axis
-    plt.xlabel ('Wait-time', fontsize=9)
-    plt.xticks (xticks, xticklabels)
+    ## Format plotting style
+    #  x-axis
+    axis.set_xlim (0, len (diseases)+2)
+    xticks = numpy.arange (len (diseases)+2)
+    axis.set_xticks (xticks)
+    xticklabels = ['', 'no-AI'] + list (diseases)
+    axis.set_xticklabels (xticklabels, fontsize=12)
+    axis.tick_params (axis='x', labelsize=12)
+    for xtick in axis.get_xticks():
+        axis.axvline (x=xtick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    #  y-axis
+    #axis.set_ylim (yrange)
+    axis.set_ylabel ('time-savings\n[min]')
+    for ytick in axis.get_yticks():
+        axis.axhline (y=ytick, color='gray', alpha=0.3, linestyle='--', linewidth=0.3)
+    #  legend and title
+    #axis.legend (loc=1, ncol=1, prop={'size':12})
 
-    # Format y-axis
-    plt.ylim (0, max(filtered_df['sim_waittime_high'].max(), filtered_df['theory_waittime'].max()) * 1.05)
-
-    plt.title('Sim vs Theory for each Diseased Group')
-    plt.legend()
     h.savefig (outFile)
-
+    plt.close('all')
 
 def plot_n_patient_distribution (axis, npatients, aclass, params, qtype, doLogY=True):
     

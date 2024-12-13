@@ -7,13 +7,6 @@
 ## information about the patient case in this radiologist's hand). The
 ## "current patient" instance will be updated as the radiologist gets
 ## interrupted or reads a new case. 
-##
-## 05/05/2023
-
-## Updated by Rucha (07/24/2023) Updated for hierarchical queuing (multi-disease, multi-AI, independent disease groups scenario).
-## Major updates in stop_reading and read_new_patient
-## ----------
-## * Add in properties for multi-AI scenario
 ###########################################################################
 
 ################################

@@ -7,10 +7,6 @@
 ## reading flow. This script is used when you want the results from
 ## one single computer. If you have a cluster, you can run individual
 ## trials in parallel without using this script.
-##
-## 05/21/2024
-## ----------
-## * Add in
 ########################################################################
 
 ################################

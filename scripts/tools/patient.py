@@ -7,20 +7,6 @@
 ## and timestamps including trigger (arrival) time, radiologist's reading
 ## time, waiting time, total time in system, etc. Each patient has a unique
 ## ID based on the arrival time, which is used to compare one patient to another.
-##
-## 05/05/2023
-## ----------
-## * Add in properties for multi-AI scenario
-##
-## 07/24/2023 by Rucha
-## ----------
-## * Update for hierarchical queuing (multi-disease, multi-AI, independent
-##   disease groups scenario).
-## * Hier_class_dict and property hier_class are now added.
-##
-## 05/21/2024
-## ----------
-## * Add in comments about hier_classes
 ###########################################################################
 
 ################################

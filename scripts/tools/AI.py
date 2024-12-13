@@ -11,15 +11,6 @@
 ## the AI object is first initiated. During simulation, the AI instance
 ## will determine the AI-call of a given patient based on its disease
 ## truth status.
-## 
-##
-## 10/28/2022
-## ----------
-## * Add in a new class method to accept a single operating threshold
-##
-## 05/05/2023
-## ----------
-## * Add in properties for multi-AI scenario
 ###########################################################################
 
 ################################

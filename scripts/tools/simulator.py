@@ -30,25 +30,6 @@
 ## that require immediate attention and interrupt the radiologist's
 ## reading the images in the reading queue. CADt devices are meant to
 ## only triage cases in the reading queue not interrupting cases.
-##
-## 05/08/2023
-## ----------
-## * Add in properties for multi-AI scenario
-##
-## 07/24/2023 by Rucha
-## ----------
-## * hierarchical queuing (multi-disease, multi-AI, independent disease
-##   groups scenario).
-## * Major updates in simulate_queue, read_newest_urgent_patient, and
-##   radiologist_do_work.
-##
-## 05/21/2024
-## ----------
-## * Clean up for hierarchical queue
-##
-## 05/24/2024
-## ----------
-## * Added is_preemptive flag
 ###########################################################################
 
 ################################

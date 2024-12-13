@@ -4,14 +4,6 @@
 ## This script contains functions that handle input user values, either as
 ## argument flags or as an input file. Based on that, an output params is
 ## returned for simulation to run on.
-##
-## 05/08/2023
-## ----------
-## * Add in properties for multi-AI scenario
-##
-## 05/20/2024
-## ----------
-## * Cleaned up for publishing multi-QuCAD 
 ################################################################################
 
 ################################
@@ -204,6 +196,10 @@ def read_args (configFile):
         ------
         params (dict): dictionary capsulating all user inputs
     '''
+
+    ## Make sure the configFile exists
+    if not os.path.exists (configFile):
+        raise IOError ('Input config file does not exist: {0}'.format (configFile))
 
     ## Put everything in a dictionary
     params = {'configFile':configFile, 'qtypes':qtypes,
@@ -745,8 +741,6 @@ def get_prob_pos_i_neg_higher_AIs (aDiseaseTree):
     highest-priority subgroup. E.g., if GroupCTA contains AIs targeting disease A and B and a patient is flagged
     as positive by both, but the AI targeting disease A is higher-priority, that patient belongs to the
     AI+ A subgroup, but not the AI+ B subgroup.
-
-    See Section 3.1 in https://www.overleaf.com/project/664f49d351990afc91a9c68d for the calculation of these probabilites (p_i in the overleaf doc).
 
     inputs
     ------
