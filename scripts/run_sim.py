@@ -3,25 +3,13 @@
 ## By Elim Thompson 12/15/2020
 ##
 ## This is the main python script to simulate radiology reading workflow at a specific clinical
-## setting with a CADt diagnostic performance. This simulation software handles a simplified
-## scenario with 1 AI that is trained to identify 1 disease condition from 1 modality and
-## anatomy. Patients in the reading queue either have the disease condition or not. User can
-## either use argument flags like below or use `../inputs/config.dat` to specify user input values.
+## setting with a CADt diagnostic performance. This simulation software handles radiologist
+## workflows with multiple disease conditions and CADt devices. Patients in the reading queue may
+## have different disease conditions. User must provide `../inputs/config.dat` to define the clinical
+## workflow.
 ##
-## $ python run_sim.py --configFile ../inputs/config.dat --verbose
+## $ python run_sim.py --configFile ../inputs/config.dat
 ##
-## 05/08/2023
-## ----------
-## * Add in properties for multi-AI scenario
-##
-## 05/20/2024
-## ----------
-## * Incorporated Rucha's work for hierarchical queue
-##
-## 05/24/2024
-## ----------
-## * Incorporated Michelle's method for non-preemptive hierarchical queue
-## * Extended it to non-preemptive priority queue
 #######################################################################################################
 
 ################################
@@ -108,26 +96,9 @@ def generate_plots (params, trialGen, results):
 
     if params['isPreemptive']:
         outFile = params['plotPath'] + 'nPatientsDistributions.png'
-        plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df, trialGen.n_patients_system_stats, params)
-
-    # For plotting patient timings in queue
-    get_n_positive_patients = lambda oneSim, qtype:len (oneSim.get_positive_records(qtype))
-    get_n_negative_patients = lambda oneSim, qtype:len (oneSim.get_negative_records(qtype))
-    get_n_interrupting_patients = lambda oneSim, qtype:len (oneSim.get_interrupting_records(qtype))
-    get_n_hier_class_patients = lambda oneSim, qtype, key:len (oneSim.get_hier_class_records(qtype, key))
-
-    ## Check AI performance with one trial
-    oneSim = simulator.simulator ()
-    oneSim.set_params (params)
-    oneSim.track_log = False ## Make sure it is False for optimal runtime
-    oneSim.simulate_queue (AIs, aDiseaseTree)
-    params['n_patients_per_class'] = {qtype:{aclass:get_n_interrupting_patients (oneSim, qtype) if aclass=='interrupting' else \
-                                                    get_n_positive_patients  (oneSim, qtype) if aclass=='positive' else \
-                                                    get_n_negative_patients  (oneSim, qtype) if aclass=='negative' else \
-                                                    get_n_hier_class_patients (oneSim, qtype, aclass)
-                                                for aclass in ['interrupting', 'positive', 'negative'] + list(params['hierDict'].keys())}
-                                        for qtype in params['qtypes'][1:]}
-    
+        plotter.plot_n_patient_distributions (outFile, trialGen.n_patients_system_df,
+                                              trialGen.n_patients_system_stats, params)
+   
     ## If do-plots, generate plots for one simulation
     if params['doPlots']:
         # Timing flow with first 200 cases for both with and withoutCADt
@@ -137,11 +108,13 @@ def generate_plots (params, trialGen, results):
         for qtype in params['qtypes']:
             outFile = params['plotPath'] + 'patient_timings_' + qtype + '.pdf'
             #Plot patient timings
-            plotter.plot_timing (outFile, oneSim.all_records, params['startTime'], n=200, qtype=qtype)
-        for qtype in ['priority', 'hierarchical']:
-            outFile = params['plotPath'] + 'sim_theory_' + qtype + '.pdf'
-            #Plot wait-time simulation and theory for each true-diseased group
-            plotter.plot_sim_theory_diseased (outFile, qtype, diseases, results)
+            plotter.plot_timing (outFile, trialGen.waiting_times_df,
+                                 params['startTime'], params['hierDict'],
+                                 params['AIinfo'], n=200, qtype=qtype)
+
+        #Plot wait-time simulation and theory for each true-diseased group
+        outFile = params['plotPath'] + 'sim_theory.pdf'
+        plotter.plot_sim_theory_diseased (outFile, diseases, results)
 
 ################################
 ## Script starts here!
@@ -172,8 +145,6 @@ if __name__ == '__main__':
     
     ## Results
     print ('Quick results from 1 trial')
-
-    #trialGen._get_sim_probabilities(trialGen.waiting_times_df, aDiseaseTree, params)
     results = sim_theory_summary (trialGen.waiting_times_df, params['theory'], params['diseaseGroups'], aDiseaseTree)
     print (results)
 
